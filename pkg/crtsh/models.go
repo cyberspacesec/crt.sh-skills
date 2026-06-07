@@ -2,9 +2,27 @@ package crtsh
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
+
+var timeFormats = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02T15:04:05.999",
+	"2006-01-02T15:04:05",
+	"2006-01-02",
+}
+
+func parseTime(s string) (time.Time, error) {
+	for _, f := range timeFormats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unable to parse time: %q", s)
+}
 
 type Certificate struct {
 	ID             int       `json:"id"`
@@ -73,9 +91,19 @@ func (c *Certificate) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	c.EntryTimestamp, _ = time.Parse(time.RFC3339, aux.EntryTimestamp)
-	c.NotBefore, _ = time.Parse("2006-01-02", aux.NotBefore)
-	c.NotAfter, _ = time.Parse("2006-01-02", aux.NotAfter)
+	var err error
+	c.EntryTimestamp, err = parseTime(aux.EntryTimestamp)
+	if err != nil {
+		return fmt.Errorf("parse entry_timestamp: %w", err)
+	}
+	c.NotBefore, err = parseTime(aux.NotBefore)
+	if err != nil {
+		return fmt.Errorf("parse not_before: %w", err)
+	}
+	c.NotAfter, err = parseTime(aux.NotAfter)
+	if err != nil {
+		return fmt.Errorf("parse not_after: %w", err)
+	}
 
 	c.NameValue = splitDomains(c.RawNameValue)
 	c.Domains = uniqueDomains(c.NameValue)

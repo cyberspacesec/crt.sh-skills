@@ -67,19 +67,32 @@ func (c *Client) SearchCertificates(ctx context.Context, params QueryParams) ([]
 		req.Header.Set("Accept", "application/json")
 
 		resp, body, err = c.doRequest(req)
-		if err == nil {
-			break
+		if err != nil {
+			if attempt == c.RetryCount {
+				return nil, nil, fmt.Errorf("%w: %v", ErrMaxRetriesExceeded, err)
+			}
+			select {
+			case <-time.After(exponentialBackoff(attempt)):
+				continue
+			case <-ctx.Done():
+				return nil, nil, ctx.Err()
+			}
 		}
 
-		if attempt == c.RetryCount {
-			return nil, nil, fmt.Errorf("%w: %v", ErrMaxRetriesExceeded, err)
+		// Retry on server errors (5xx)
+		if resp.StatusCode >= 500 {
+			if attempt == c.RetryCount {
+				return nil, nil, c.parseAPIError(resp.StatusCode, body)
+			}
+			select {
+			case <-time.After(exponentialBackoff(attempt)):
+				continue
+			case <-ctx.Done():
+				return nil, nil, ctx.Err()
+			}
 		}
 
-		select {
-		case <-time.After(exponentialBackoff(attempt)):
-		case <-ctx.Done():
-			return nil, nil, ctx.Err()
-		}
+		break
 	}
 
 	if resp.StatusCode != http.StatusOK {

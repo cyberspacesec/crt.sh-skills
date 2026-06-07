@@ -1,4 +1,3 @@
-// models_test.go
 package crtsh
 
 import (
@@ -9,12 +8,13 @@ import (
 
 func TestCertificate_UnmarshalJSON(t *testing.T) {
 	testCases := []struct {
-		name     string
-		input    string
-		expected Certificate
+		name        string
+		input       string
+		expected    Certificate
+		expectError bool
 	}{
 		{
-			name: "valid timestamp format",
+			name: "valid timestamp without timezone",
 			input: `{
 				"id": 1,
 				"issuer_ca_id": 123,
@@ -29,7 +29,7 @@ func TestCertificate_UnmarshalJSON(t *testing.T) {
 				IssuerCAID:     123,
 				RawNameValue:   "example.com\n*.example.com",
 				NameValue:      []string{"example.com", "*.example.com"},
-				Domains:        []string{"example.com", "example.com"},
+				Domains:        []string{"example.com"},
 				EntryTimestamp: time.Date(2025, 2, 26, 12, 34, 56, 789000000, time.UTC),
 				NotBefore:      time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 				NotAfter:       time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -39,15 +39,11 @@ func TestCertificate_UnmarshalJSON(t *testing.T) {
 		{
 			name: "invalid time format",
 			input: `{
-				"entry_timestamp": "invalid",
-				"not_before": "invalid",
-				"not_after": "invalid"
+				"entry_timestamp": "not-a-date",
+				"not_before": "not-a-date",
+				"not_after": "not-a-date"
 			}`,
-			expected: Certificate{
-				EntryTimestamp: time.Time{},
-				NotBefore:      time.Time{},
-				NotAfter:       time.Time{},
-			},
+			expectError: true,
 		},
 	}
 
@@ -55,18 +51,21 @@ func TestCertificate_UnmarshalJSON(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var cert Certificate
 			err := json.Unmarshal([]byte(tc.input), &cert)
-			if tc.expected.EntryTimestamp.IsZero() && err == nil {
+			if tc.expectError && err == nil {
 				t.Error("Expected error for invalid time format")
 			}
-
-			if !cert.EntryTimestamp.Equal(tc.expected.EntryTimestamp) {
-				t.Errorf("EntryTimestamp mismatch: got %v, want %v",
-					cert.EntryTimestamp, tc.expected.EntryTimestamp)
+			if !tc.expectError && err != nil {
+				t.Errorf("Unexpected error: %v", err)
 			}
-
-			if len(cert.Domains) != len(tc.expected.Domains) {
-				t.Errorf("Domains count mismatch: got %d, want %d",
-					len(cert.Domains), len(tc.expected.Domains))
+			if !tc.expectError {
+				if !cert.EntryTimestamp.Equal(tc.expected.EntryTimestamp) {
+					t.Errorf("EntryTimestamp mismatch: got %v, want %v",
+						cert.EntryTimestamp, tc.expected.EntryTimestamp)
+				}
+				if len(cert.Domains) != len(tc.expected.Domains) {
+					t.Errorf("Domains count mismatch: got %d, want %d",
+						len(cert.Domains), len(tc.expected.Domains))
+				}
 			}
 		})
 	}

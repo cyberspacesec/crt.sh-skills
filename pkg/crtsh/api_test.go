@@ -51,7 +51,7 @@ func TestClient_SearchCertificates(t *testing.T) {
 	if len(result) != 1 || result[0].ID != 1 {
 		t.Errorf("Unexpected result: %+v", result)
 	}
-	if len(result[0].Domains) != 2 || result[0].Domains[0] != "example.com" {
+	if len(result[0].Domains) != 1 || result[0].Domains[0] != "example.com" {
 		t.Errorf("Domain parsing failed: %v", result[0].Domains)
 	}
 }
