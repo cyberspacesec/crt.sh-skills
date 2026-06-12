@@ -1,0 +1,6 @@
+{
+  "go-crt-sh": {
+    "command": "go",
+    "args": ["run", "./cmd/mcp-server", "--transport", "stdio"]
+  }
+}

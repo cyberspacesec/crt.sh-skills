@@ -55,6 +55,7 @@
 .idea
 .idea/
 .mcp/
+!.mcp.json
 .vscode/
 /bin/
 /build/

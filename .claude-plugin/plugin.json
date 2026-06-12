@@ -1,0 +1,13 @@
+{
+  "name": "go-crt-sh",
+  "description": "Certificate transparency search via crt.sh — discover domains, subdomains, and SSL/TLS certificate details from CT logs",
+  "version": "1.0.0",
+  "author": {
+    "name": "CyberspaceSec",
+    "url": "https://github.com/cyberspacesec"
+  },
+  "homepage": "https://github.com/cyberspacesec/go-crt.sh",
+  "repository": "https://github.com/cyberspacesec/go-crt.sh.git",
+  "license": "MIT",
+  "keywords": ["certificate-transparency", "crt.sh", "subdomain-enum", "ssl", "tls", "reconnaissance", "security", "mcp"]
+}
