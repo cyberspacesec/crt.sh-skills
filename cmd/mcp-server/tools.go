@@ -68,6 +68,24 @@ func registerTools(s *server.MCPServer, client *crtsh.Client) {
 		),
 	)
 	s.AddTool(getCertTool, getCertificateHandler(client))
+
+	// Tool: get_info_page
+	infoPageTool := mcp.NewTool("get_info_page",
+		mcp.WithDescription("Retrieve information pages from crt.sh such as CT log status, "+
+			"CA disclosures, revoked intermediates, OCSP responders, and Mozilla/Apple/Chrome root program data."),
+		mcp.WithString("page",
+			mcp.Required(),
+			mcp.Description("The info page to retrieve. Available: cert-populations, revoked-intermediates, "+
+				"ca-issuers, ocsp-responders, test-websites, monitored-logs, accepted-roots-missing, "+
+				"gen-add-chain, mozilla-disclosures, mozilla-certvalidations, mozilla-onecrl, "+
+				"apple-disclosures, chrome-disclosures"),
+			mcp.Enum("cert-populations", "revoked-intermediates", "ca-issuers", "ocsp-responders",
+				"test-websites", "monitored-logs", "accepted-roots-missing", "gen-add-chain",
+				"mozilla-disclosures", "mozilla-certvalidations", "mozilla-onecrl",
+				"apple-disclosures", "chrome-disclosures"),
+		),
+	)
+	s.AddTool(infoPageTool, getInfoPageHandler(client))
 }
 
 func searchCertificatesHandler(client *crtsh.Client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -182,6 +200,27 @@ func getCertificateHandler(client *crtsh.Client) func(ctx context.Context, req m
 		}
 
 		data, err := json.MarshalIndent(cert, "", "  ")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("json marshal error: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+func getInfoPageHandler(client *crtsh.Client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		page, err := req.RequireString("page")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("missing required parameter 'page': %v", err)), nil
+		}
+
+		info, err := client.FetchInfoPage(ctx, page)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to fetch info page: %v", err)), nil
+		}
+
+		data, err := json.MarshalIndent(info, "", "  ")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("json marshal error: %v", err)), nil
 		}

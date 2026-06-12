@@ -244,26 +244,23 @@ func (c *Client) buildQuery(params QueryParams) url.Values {
 		query.Set("match", params.Match)
 	}
 
-	// Set boolean flags
+	// Set boolean flags (using crt.sh URL parameter format from JS)
 	if params.ExcludeExpired {
-		query.Set("excludeExpired", "on")
+		query.Set("exclude", "expired")
 	}
 	if params.Deduplicate {
-		query.Set("deduplicate", "on")
+		query.Set("deduplicate", "Y")
 	}
 	if params.ShowSQL {
-		query.Set("showSQL", "on")
+		query.Set("showSQL", "Y")
 	}
 	if params.SearchCensys {
 		query.Set("searchCensys", "on")
 	}
 
-	// Set linting parameters
+	// Set linting parameters (crt.sh uses linter name as URL param key)
 	if params.Linter != "" {
-		query.Set("linter", params.Linter)
-	}
-	if params.LintType != "" {
-		query.Set("linttype", params.LintType)
+		query.Set(params.Linter, params.LintType)
 	}
 
 	// Set pagination
@@ -275,6 +272,122 @@ func (c *Client) buildQuery(params QueryParams) url.Values {
 	}
 
 	return query
+}
+
+// InfoPage represents a crt.sh information page
+type InfoPage struct {
+	Path        string `json:"path"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Content     string `json:"content"`
+}
+
+// Available info pages on crt.sh
+var InfoPages = map[string]InfoPage{
+	"cert-populations": {
+		Path:        "cert-populations",
+		Title:       "Certificate Populations",
+		Description: "Statistics about certificate populations across CT logs",
+	},
+	"revoked-intermediates": {
+		Path:        "revoked-intermediates",
+		Title:       "Revoked Intermediates",
+		Description: "List of revoked intermediate CA certificates",
+	},
+	"ca-issuers": {
+		Path:        "ca-issuers",
+		Title:       "CA Issuers",
+		Description: "Certificate Authority issuer information",
+	},
+	"ocsp-responders": {
+		Path:        "ocsp-responders",
+		Title:       "OCSP Responders",
+		Description: "OCSP responder information for CAs",
+	},
+	"test-websites": {
+		Path:        "test-websites",
+		Title:       "Test Websites",
+		Description: "Test websites for certificate validation",
+	},
+	"monitored-logs": {
+		Path:        "monitored-logs",
+		Title:       "Monitored Logs",
+		Description: "CT logs monitored by crt.sh",
+	},
+	"accepted-roots-missing": {
+		Path:        "accepted-roots-missing",
+		Title:       "Accepted Roots Missing",
+		Description: "Root certificates accepted but missing from crt.sh database",
+	},
+	"gen-add-chain": {
+		Path:        "gen-add-chain",
+		Title:       "Certificate Submission Assistant",
+		Description: "Tool to help submit certificates to CT logs",
+	},
+	"mozilla-disclosures": {
+		Path:        "mozilla-disclosures",
+		Title:       "Mozilla CA Certificate Disclosures",
+		Description: "CA certificate disclosures for Mozilla root program",
+	},
+	"mozilla-certvalidations": {
+		Path:        "mozilla-certvalidations",
+		Title:       "Mozilla Certificate Validations",
+		Description: "Certificate validation requirements for Mozilla root program",
+	},
+	"mozilla-onecrl": {
+		Path:        "mozilla-onecrl",
+		Title:       "Mozilla OneCRL",
+		Description: "Mozilla's certificate revocation list (OneCRL)",
+	},
+	"apple-disclosures": {
+		Path:        "apple-disclosures",
+		Title:       "Apple CA Certificate Disclosures",
+		Description: "CA certificate disclosures for Apple root program",
+	},
+	"chrome-disclosures": {
+		Path:        "chrome-disclosures",
+		Title:       "Chrome CA Certificate Disclosures",
+		Description: "CA certificate disclosures for Chrome root program",
+	},
+}
+
+// FetchInfoPage retrieves an information page from crt.sh
+func (c *Client) FetchInfoPage(ctx context.Context, pagePath string) (*InfoPage, error) {
+	info, ok := InfoPages[pagePath]
+	if !ok {
+		return nil, fmt.Errorf("unknown info page: %s (available: cert-populations, revoked-intermediates, ca-issuers, ocsp-responders, test-websites, monitored-logs, accepted-roots-missing, gen-add-chain, mozilla-disclosures, mozilla-certvalidations, mozilla-onecrl, apple-disclosures, chrome-disclosures)", pagePath)
+	}
+
+	u, err := url.Parse(c.BaseURL + pagePath)
+	if err != nil {
+		return nil, fmt.Errorf("url parse error: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("request creation failed: %w", err)
+	}
+
+	req.Header.Set("User-Agent", c.UserAgent)
+
+	resp, body, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch info page (status %d): %s", resp.StatusCode, string(body[:min(len(body), 200)]))
+	}
+
+	info.Content = string(body)
+	return &info, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (c *Client) doRequest(req *http.Request) (*http.Response, []byte, error) {

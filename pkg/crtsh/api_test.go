@@ -11,20 +11,17 @@ import (
 )
 
 func TestClient_SearchCertificates(t *testing.T) {
-	// 创建测试服务器
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 验证请求参数
 		if r.URL.Query().Get("searchtype") != "CN" || r.URL.Query().Get("common_name") != "example.com" {
 			t.Errorf("Unexpected query parameters: %v", r.URL)
 		}
 
-		// 返回测试数据
 		certs := []Certificate{{
 			ID:           1,
 			IssuerCAID:   123,
 			RawNameValue: "example.com\n*.example.com",
 			NotBefore:    time.Now().Add(-24 * time.Hour),
-			NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+			NotAfter:     time.Now().Add(365 * time.Hour),
 			SerialNumber: "ABCD1234",
 		}}
 		w.WriteHeader(http.StatusOK)
@@ -32,11 +29,9 @@ func TestClient_SearchCertificates(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	// 配置测试客户端
 	client := NewClient()
 	client.BaseURL = testServer.URL + "/"
 
-	// 执行搜索
 	params := QueryParams{
 		SearchType: "CN",
 		CN:         "example.com",
@@ -47,7 +42,6 @@ func TestClient_SearchCertificates(t *testing.T) {
 		t.Fatalf("Search failed: %v", err)
 	}
 
-	// 验证结果
 	if len(result) != 1 || result[0].ID != 1 {
 		t.Errorf("Unexpected result: %+v", result)
 	}
@@ -56,8 +50,101 @@ func TestClient_SearchCertificates(t *testing.T) {
 	}
 }
 
+func TestClient_SearchCertificates_URLParams(t *testing.T) {
+	tests := []struct {
+		name           string
+		params         QueryParams
+		expectedParams map[string]string
+	}{
+		{
+			name: "exclude expired",
+			params: QueryParams{
+				Q:              "example.com",
+				ExcludeExpired: true,
+			},
+			expectedParams: map[string]string{
+				"exclude": "expired",
+			},
+		},
+		{
+			name: "deduplicate",
+			params: QueryParams{
+				Q:           "example.com",
+				Deduplicate: true,
+			},
+			expectedParams: map[string]string{
+				"deduplicate": "Y",
+			},
+		},
+		{
+			name: "show SQL",
+			params: QueryParams{
+				Q:       "example.com",
+				ShowSQL: true,
+			},
+			expectedParams: map[string]string{
+				"showSQL": "Y",
+			},
+		},
+		{
+			name: "linter zlint with issues",
+			params: QueryParams{
+				Q:        "example.com",
+				Linter:   "zlint",
+				LintType: "issues",
+			},
+			expectedParams: map[string]string{
+				"zlint": "issues",
+			},
+		},
+		{
+			name: "search type c (certificate fingerprint)",
+			params: QueryParams{
+				SearchType: "c",
+				Q:          "ABCDEF123456",
+			},
+			expectedParams: map[string]string{
+				"searchtype": "c",
+				"c":          "ABCDEF123456",
+			},
+		},
+		{
+			name: "search type ca",
+			params: QueryParams{
+				SearchType: "ca",
+				Q:          "Let's Encrypt",
+			},
+			expectedParams: map[string]string{
+				"searchtype": "ca",
+				"ca":         "Let's Encrypt",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				for key, expected := range tt.expectedParams {
+					got := r.URL.Query().Get(key)
+					if got != expected {
+						t.Errorf("param %q: got %q, want %q", key, got, expected)
+					}
+				}
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode([]Certificate{})
+			}))
+			defer testServer.Close()
+
+			client := NewClient()
+			client.BaseURL = testServer.URL + "/"
+			client.RetryCount = 0
+
+			_, _, _ = client.SearchCertificates(context.Background(), tt.params)
+		})
+	}
+}
+
 func TestClient_HandleHTTPErrors(t *testing.T) {
-	// 测试服务器返回500错误
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(`{"error": "server error"}`))

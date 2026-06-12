@@ -1,7 +1,7 @@
 ---
 name: crtsh-search
 description: Use when searching certificate transparency logs for domains, subdomains, SSL/TLS certificates, or certificate transparency data via crt.sh. Triggers on mentions of CT logs, subdomain enumeration, certificate search, SSL fingerprint lookup, or domain reconnaissance.
-allowed-tools: ["mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_certificate"]
+allowed-tools: ["mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__get_info_page"]
 ---
 
 # crt.sh Certificate Search
@@ -15,6 +15,8 @@ allowed-tools: ["mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_cert
 - User needs certificate transparency log data for reconnaissance
 - User asks to enumerate subdomains via CT logs
 - User wants to find certificates by hash, serial number, or CA
+- User wants to lint certificates (check for compliance issues)
+- User asks about CT log monitoring, CA disclosures, or revocation lists
 
 ## When NOT to Use
 
@@ -31,11 +33,13 @@ Based on what the user is looking for, choose the appropriate `search_type`:
 | User wants | search_type | Example query |
 |-----------|------------|---------------|
 | All certs for a domain | `""` (empty/default) | `example.com` |
+| Cert by SHA-1 or SHA-256 fingerprint | `c` | `ABCD1234...` |
 | Subdomains via DNS SAN | `dNSName` | `example.com` |
 | Cert by SHA-256 fingerprint | `sha256` | `ABCD1234...` |
 | Cert by serial number | `serial` | `00:11:22:33` |
 | Certs by Common Name | `CN` | `example.com` |
 | Certs by CA name | `CAName` | `Let's Encrypt` |
+| Certs by CA (general) | `ca` | `DigiCert` |
 | Certs by email | `E` | `admin@example.com` |
 | Certs by organization | `O` | `Example Inc` |
 | Certs by IP address SAN | `iPAddress` | `1.2.3.4` |
@@ -50,6 +54,10 @@ Call the `search_certificates` MCP tool with the determined parameters.
 - Set `deduplicate` to `true` to remove duplicate precertificate pairs
 - Set `exclude_expired` to `true` if only active certificates matter
 
+**For certificate linting:**
+- Set `linter` to the desired linter: `cablint`, `x509lint`, `zlint`, `keylint`, or `lint` (all)
+- Set `lint_type` to `"1 week"` for summary or `"issues"` for issues only
+
 **For pagination:**
 - Start with `page=1` and `page_size=50`
 - If `pagination.next_page` is set, there are more results
@@ -59,12 +67,15 @@ Call the `search_certificates` MCP tool with the determined parameters.
 
 The response contains a `certificates` array. Each certificate has:
 - `id` — crt.sh certificate ID (use for get_certificate)
+- `common_name` — the certificate's commonName
+- `issuer_name` — full issuer distinguished name
 - `name_value` — domain names associated with the cert
 - `domains` — deduplicated, wildcard-stripped domain list
 - `entry_timestamp` — when the cert was logged
 - `not_before` / `not_after` — certificate validity period
 - `issuer_ca_id` — the CA that issued the cert
 - `serial_number` — certificate serial number
+- `result_count` — number of matching results
 
 **Present results as:**
 1. A summary: "Found N certificates for domain X"
@@ -74,6 +85,17 @@ The response contains a `certificates` array. Each certificate has:
 ### Step 4: Deep-dive with get_certificate (if needed)
 
 If the user wants details on a specific certificate, call `get_certificate` with the `id` from the search results.
+
+### Step 5: Info pages (if needed)
+
+If the user asks about CT log monitoring, CA disclosures, or revocation information, call `get_info_page` with the appropriate page name:
+- `monitored-logs` — CT logs monitored by crt.sh
+- `revoked-intermediates` — Revoked intermediate CAs
+- `mozilla-onecrl` — Mozilla's certificate revocation list
+- `mozilla-disclosures`, `apple-disclosures`, `chrome-disclosures` — CA disclosures per root program
+- `ca-issuers` — CA issuer information
+- `ocsp-responders` — OCSP responder details
+- `cert-populations` — Certificate population statistics
 
 ## Examples
 
@@ -97,8 +119,22 @@ User: "Look up this certificate by SHA-256: ABCD1234..."
 User: "What certificates has Let's Encrypt issued for example.com?"
 
 1. Call `search_certificates(query="example.com", deduplicate=true)`
-2. Filter results where `issuer_ca_id` matches Let's Encrypt
+2. Filter results where `issuer_name` contains "Let's Encrypt"
 3. Present filtered results
+
+### Example 4: Linting
+
+User: "Check example.com certificates for linting issues"
+
+1. Call `search_certificates(query="example.com", linter="zlint", lint_type="issues", deduplicate=true, exclude_expired=true)`
+2. Present any linting issues found
+
+### Example 5: CT log information
+
+User: "What CT logs does crt.sh monitor?"
+
+1. Call `get_info_page(page="monitored-logs")`
+2. Present the monitored log information
 
 ## Notes
 
@@ -106,3 +142,4 @@ User: "What certificates has Let's Encrypt issued for example.com?"
 - For large domains, results can span many pages — ask user if they want all pages
 - Wildcard certificates (`*.example.com`) are stripped to the base domain in the `domains` field
 - The `name_value` field may contain multiple domains separated by newlines
+- Info pages return HTML content — parse accordingly

@@ -1,7 +1,7 @@
 ---
 name: crtsh-cert
 description: Use when retrieving a specific certificate's full details from crt.sh by its ID. Triggers on mentions of certificate ID lookup, specific cert details, or when user provides a crt.sh numeric ID.
-allowed-tools: ["mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__search_certificates"]
+allowed-tools: ["mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_info_page"]
 ---
 
 # crt.sh Certificate Detail Lookup
@@ -39,11 +39,14 @@ Call the `get_certificate` MCP tool with:
 The response contains the full certificate data including:
 - `id` — crt.sh ID
 - `issuer_ca_id` — Certificate Authority ID
+- `issuer_name` — Full issuer distinguished name
+- `common_name` — Certificate commonName
 - `name_value` — All names/domains on the certificate
 - `entry_timestamp` — CT log entry time
 - `not_before` — Certificate validity start
 - `not_after` — Certificate validity end
 - `serial_number` — Certificate serial number
+- `result_count` — Number of matching results
 
 Present the information in a structured, readable format.
 
@@ -54,7 +57,7 @@ Present the information in a structured, readable format.
 User: "Show me certificate 9999999"
 
 1. Call `get_certificate(id=9999999)`
-2. Present: "Certificate #9999999: Issued by CA #12345, valid from 2024-01-01 to 2025-01-01, for domains: example.com, www.example.com"
+2. Present: "Certificate #9999999: CN=example.com, Issued by C=US, O=SSL Corp, CN=Cloudflare TLS Issuing RSA CA 3, valid from 2024-01-01 to 2025-01-01, for domains: example.com, www.example.com"
 
 ### Example 2: Domain to certificate details
 
