@@ -27,12 +27,15 @@ func parseTime(s string) (time.Time, error) {
 type Certificate struct {
 	ID             int       `json:"id"`
 	IssuerCAID     int       `json:"issuer_ca_id"`
+	IssuerName     string    `json:"issuer_name"`
+	CommonName     string    `json:"common_name"`
 	NameValue      []string  `json:"-"`
 	RawNameValue   string    `json:"name_value"`
 	EntryTimestamp time.Time `json:"entry_timestamp"`
 	NotBefore      time.Time `json:"not_before"`
 	NotAfter       time.Time `json:"not_after"`
 	SerialNumber   string    `json:"serial_number"`
+	ResultCount    int       `json:"result_count"`
 	Domains        []string  `json:"-"`
 }
 

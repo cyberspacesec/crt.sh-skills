@@ -148,6 +148,11 @@ func (c *Client) buildQuery(params QueryParams) url.Values {
 	}
 
 	switch params.SearchType {
+	case "c":
+		// Certificate fingerprint search — crt.sh uses ?c=<fingerprint>
+		if params.Q != "" {
+			query.Set("c", params.Q)
+		}
 	case "id":
 		if params.ID != "" {
 			query.Set("id", params.ID)
@@ -191,6 +196,11 @@ func (c *Client) buildQuery(params QueryParams) url.Values {
 	case "CAName":
 		if params.CAName != "" {
 			query.Set("ca_name", params.CAName)
+		}
+	case "ca":
+		// CA search — crt.sh uses ?ca=<value>
+		if params.Q != "" {
+			query.Set("ca", params.Q)
 		}
 	case "Identity":
 		if params.Identity != "" {

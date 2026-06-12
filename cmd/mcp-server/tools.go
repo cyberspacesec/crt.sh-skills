@@ -23,9 +23,10 @@ func registerTools(s *server.MCPServer, client *crtsh.Client) {
 		),
 		mcp.WithString("search_type",
 			mcp.Description("Type of search to perform. Default is general search (empty string). "+
-				"Common values: empty=general search, sha256=SHA-256 fingerprint, serial=serial number, "+
-				"CN=commonName, dNSName=DNS SAN, iPAddress=IP address SAN"),
-			mcp.Enum("", "id", "ctid", "serial", "ski", "spkisha1", "spkisha256",
+				"Common values: empty=general search, c=certificate fingerprint (SHA-1/SHA-256), "+
+				"sha256=SHA-256 fingerprint, serial=serial number, "+
+				"CN=commonName, dNSName=DNS SAN, iPAddress=IP address SAN, ca=CA search"),
+			mcp.Enum("", "c", "id", "ctid", "serial", "ski", "spkisha1", "spkisha256",
 				"subjectsha1", "sha1", "sha256", "ca", "CAID", "CAName",
 				"Identity", "CN", "E", "OU", "O", "dNSName", "rfc822Name", "iPAddress"),
 		),
@@ -44,6 +45,15 @@ func registerTools(s *server.MCPServer, client *crtsh.Client) {
 		),
 		mcp.WithNumber("page_size",
 			mcp.Description("Number of results per page"),
+		),
+		mcp.WithString("linter",
+			mcp.Description("Run certificate linting with the specified linter. "+
+				"Returns linting results alongside certificate search results."),
+			mcp.Enum("", "cablint", "x509lint", "zlint", "keylint", "lint"),
+		),
+		mcp.WithString("lint_type",
+			mcp.Description("Linting output type: '1 week' for 1-week summary, 'issues' for issues only"),
+			mcp.Enum("", "1 week", "issues"),
 		),
 	)
 	s.AddTool(searchTool, searchCertificatesHandler(client))
@@ -73,18 +83,25 @@ func searchCertificatesHandler(client *crtsh.Client) func(ctx context.Context, r
 		deduplicate := req.GetBool("deduplicate", false)
 		page := int(req.GetFloat("page", 0))
 		pageSize := int(req.GetFloat("page_size", 0))
+		linter := req.GetString("linter", "")
+		lintType := req.GetString("lint_type", "")
 
 		params := crtsh.QueryParams{
 			SearchType:     searchType,
 			Match:          match,
 			ExcludeExpired: excludeExpired,
 			Deduplicate:    deduplicate,
+			Linter:         linter,
+			LintType:       lintType,
 			Page:           page,
 			PageSize:       pageSize,
 		}
 
 		// Route query to the correct field based on search_type
 		switch searchType {
+		case "c":
+			// Certificate fingerprint search (SHA-1 or SHA-256) — crt.sh matches against both
+			params.Q = query
 		case "id":
 			params.ID = query
 		case "ctid":
@@ -107,6 +124,9 @@ func searchCertificatesHandler(client *crtsh.Client) func(ctx context.Context, r
 			params.CAID = query
 		case "CAName":
 			params.CAName = query
+		case "ca":
+			// CA search — searches by CA ID or name (crt.sh handles routing)
+			params.Q = query
 		case "Identity":
 			params.Identity = query
 		case "CN":
