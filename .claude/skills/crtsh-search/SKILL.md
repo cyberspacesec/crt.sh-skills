@@ -18,19 +18,134 @@ allowed-tools: ["mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_cert
 | `get_ca` | Get CA cert details | ca_id |
 | `search_censys` | Build Censys.io URL | query, search_type |
 
-## CLI Quick Reference
+## CLI Reference — All Commands & Flags
 
+### `crtsh-cli search [query]` — Search certificate transparency logs
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--type` | `-t` | string | `""` | Search type. 22 types available (see table below) |
+| `--match` | `-m` | string | `""` | Match mode: `=`, `ILIKE`, `LIKE`, `single`, `any`, `FTS` |
+| `--exclude-expired` | `-e` | bool | false | Exclude expired certificates from results |
+| `--deduplicate` | `-d` | bool | false | Deduplicate precertificate pairs |
+| `--show-sql` | | bool | false | Show the SQL query crt.sh uses (for debugging) |
+| `--linter` | | string | `""` | Run certificate linter: `cablint`, `x509lint`, `zlint`, `keylint`, `lint` (all) |
+| `--lint-type` | | string | `""` | Lint output type: `1 week` (summary), `issues` (issues only) |
+| `--page` | `-p` | int | 0 | Page number for pagination (1-based) |
+| `--page-size` | `-s` | int | 0 | Number of results per page |
+| `--json` | `-j` | bool | false | Output results as JSON |
+
+Examples:
 ```bash
-crtsh-cli search example.com -ed                    # Search with exclude-expired + deduplicate
-crtsh-cli search ABCDEF --type sha256               # Search by SHA-256 fingerprint
-crtsh-cli search "Let's Encrypt" --type CAName      # Search by CA name
-crtsh-cli get-cert 26786991824 --json               # Get certificate by ID
-crtsh-cli info-page monitored-logs                  # Get CT log info
-crtsh-cli get-ca 16418                              # Get CA certificate details
-crtsh-cli censys "example.com" --type CN            # Build Censys.io URL
-crtsh-cli list-types                                # List all 22 search types
-crtsh-cli list-pages                                # List all 13 info pages
+crtsh-cli search example.com -ed                     # Default search, exclude expired + deduplicate
+crtsh-cli search example.com -ed --json               # Same, but JSON output
+crtsh-cli search ABCDEF1234 --type sha256             # Search by SHA-256 fingerprint
+crtsh-cli search "Let's Encrypt" --type CAName        # Search by CA name
+crtsh-cli search example.com --type dNSName           # Search by DNS SAN
+crtsh-cli search example.com --linter zlint --lint-type issues  # Lint with zlint
+crtsh-cli search example.com --show-sql               # Debug: see the SQL query
+crtsh-cli search example.com -p 2 -s 50               # Page 2, 50 results per page
+crtsh-cli search example.com --match ILIKE            # Case-insensitive pattern match
 ```
+
+**All 22 search types:**
+
+| `--type` value | Description |
+|----------------|-------------|
+| *(empty, default)* | General search (domain name) |
+| `c` | Certificate fingerprint (SHA-1 or SHA-256) |
+| `id` | crt.sh certificate ID |
+| `ctid` | CT Entry ID |
+| `serial` | Serial number |
+| `ski` | Subject Key Identifier |
+| `spkisha1` | SHA-1(SubjectPublicKeyInfo) |
+| `spkisha256` | SHA-256(SubjectPublicKeyInfo) |
+| `subjectsha1` | SHA-1(Subject) |
+| `sha1` | SHA-1(Certificate) |
+| `sha256` | SHA-256(Certificate) |
+| `ca` | CA (general) |
+| `CAID` | CA ID |
+| `CAName` | CA Name |
+| `Identity` | Identity |
+| `CN` | commonName (Subject) |
+| `E` | emailAddress (Subject) |
+| `OU` | organizationalUnitName (Subject) |
+| `O` | organizationName (Subject) |
+| `dNSName` | dNSName (SAN) |
+| `rfc822Name` | rfc822Name (SAN) |
+| `iPAddress` | iPAddress (SAN) |
+
+### `crtsh-cli get-cert [id]` — Get certificate by crt.sh ID
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--json` | `-j` | bool | false | Output as JSON |
+
+Example:
+```bash
+crtsh-cli get-cert 26786991824          # Human-readable output
+crtsh-cli get-cert 26786991824 --json   # JSON output
+```
+
+### `crtsh-cli info-page [page-name]` — Get crt.sh information page
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--json` | `-j` | bool | false | Output as JSON |
+
+**All 13 info pages:**
+
+| Page | Description |
+|------|-------------|
+| `cert-populations` | Certificate population statistics |
+| `revoked-intermediates` | Revoked intermediate CA certificates |
+| `ca-issuers` | CA issuer information |
+| `ocsp-responders` | OCSP responder details |
+| `test-websites` | Test websites for cert validation |
+| `monitored-logs` | CT logs monitored by crt.sh |
+| `accepted-roots-missing` | Roots accepted but missing from DB |
+| `gen-add-chain` | Certificate submission assistant |
+| `mozilla-disclosures` | Mozilla CA certificate disclosures |
+| `mozilla-certvalidations` | Mozilla cert validation requirements |
+| `mozilla-onecrl` | Mozilla certificate revocation list |
+| `apple-disclosures` | Apple CA certificate disclosures |
+| `chrome-disclosures` | Chrome CA certificate disclosures |
+
+### `crtsh-cli get-ca [ca-id]` — Get CA certificate details
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--json` | `-j` | bool | false | Output as JSON |
+
+Example:
+```bash
+crtsh-cli get-ca 16418          # Human-readable output
+crtsh-cli get-ca 16418 --json   # JSON output
+```
+
+### `crtsh-cli censys [query]` — Build Censys.io search URL
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--type` | `-t` | string | `CN` | Search type for Censys (see list below) |
+
+**Censys-supported search types:** `c`, `serial`, `sha1`, `sha256`, `ca`, `CAName`, `Identity`, `CN`, `OU`, `O`, `dNSName`, `rfc822Name`, `iPAddress`
+
+**NOT supported by Censys:** `id`, `ctid`, `ski`, `spkisha1`, `spkisha256`, `subjectsha1`, `E`, `CAID`
+
+Example:
+```bash
+crtsh-cli censys "example.com" --type CN           # Search by common name
+crtsh-cli censys "example.com" --type dNSName      # Search by DNS SAN
+```
+
+### `crtsh-cli list-types` — List all search types
+
+No flags. Outputs a table of all 22 search types with descriptions.
+
+### `crtsh-cli list-pages` — List all info pages
+
+No flags. Outputs a table of all 13 info pages with titles and descriptions.
 
 ## When to Use
 
@@ -85,6 +200,16 @@ search_certificates(query="ABCD1234...", search_type="sha256")
 search_certificates(query="example.com", linter="zlint", lint_type="issues")
 ```
 
+**Debug SQL query**:
+```
+search_certificates(query="example.com", show_sql=true)
+```
+
+**Pagination**:
+```
+search_certificates(query="example.com", page=1, page_size=50)
+```
+
 ### Step 3: Parse results
 
 Each certificate contains:
@@ -101,27 +226,11 @@ Each certificate contains:
 - **Info pages**: `get_info_page(page="monitored-logs")`
 - **Censys cross-reference**: `search_censys(query="example.com", search_type="CN")`
 
-### Available Info Pages
-
-| Page | What it shows |
-|------|-------------|
-| `monitored-logs` | CT logs monitored by crt.sh |
-| `revoked-intermediates` | Revoked intermediate CAs |
-| `ca-issuers` | CA issuer information |
-| `ocsp-responders` | OCSP responder details |
-| `cert-populations` | Certificate population stats |
-| `test-websites` | Test websites for cert validation |
-| `accepted-roots-missing` | Roots accepted but missing from DB |
-| `gen-add-chain` | Certificate submission assistant |
-| `mozilla-disclosures` | Mozilla CA certificate disclosures |
-| `mozilla-certvalidations` | Mozilla cert validation requirements |
-| `mozilla-onecrl` | Mozilla certificate revocation list |
-| `apple-disclosures` | Apple CA certificate disclosures |
-| `chrome-disclosures` | Chrome CA certificate disclosures |
-
 ## Notes
 
-- crt.sh can be slow or return 5xx during peak load — SDK retries automatically
+- crt.sh can be slow or return 5xx during peak load — SDK retries automatically (3 retries with exponential backoff)
 - `search_censys` does NOT support: `id`, `ctid`, `ski`, `spkisha1`, `spkisha256`, `subjectsha1`, `E`, `CAID`
 - Wildcard certs (`*.example.com`) are stripped to base domain in `domains`
-- `entry_timestamp` can be null for some certificates
+- `entry_timestamp` can be null for some certificates (e.g. "Issuer Not Found" entries)
+- All CLI commands support `--json` for machine-readable output
+- Use `crtsh-cli list-types` and `crtsh-cli list-pages` to discover available options

@@ -18,15 +18,66 @@ allowed-tools: ["mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__get_ca", "mc
 | `get_info_page` | Get CA-related info pages | page |
 | `search_censys` | Cross-reference on Censys.io | query, search_type |
 
-## CLI Quick Reference
+## CLI Reference — All Commands & Flags
 
+### `crtsh-cli get-cert [id]` — Get certificate by crt.sh ID
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--json` | `-j` | bool | false | Output as JSON |
+
+Examples:
 ```bash
-crtsh-cli get-cert 26786991824                    # Get certificate details
-crtsh-cli get-cert 26786991824 --json             # JSON output
-crtsh-cli get-ca 16418                            # Get CA certificate details
-crtsh-cli search example.com -ed --page-size 5    # Find certs first
-crtsh-cli info-page ca-issuers                    # CA issuer info
+crtsh-cli get-cert 26786991824          # Human-readable: CN, issuer, validity, domains
+crtsh-cli get-cert 26786991824 --json   # JSON output for programmatic use
 ```
+
+### `crtsh-cli get-ca [ca-id]` — Get CA certificate details
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--json` | `-j` | bool | false | Output as JSON |
+
+Examples:
+```bash
+crtsh-cli get-ca 16418          # Human-readable CA certificate details
+crtsh-cli get-ca 16418 --json   # JSON output
+```
+
+### `crtsh-cli info-page [page-name]` — Get crt.sh info page
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--json` | `-j` | bool | false | Output as JSON |
+
+CA-related info pages:
+
+| Page | Description |
+|------|-------------|
+| `ca-issuers` | CA issuer information |
+| `revoked-intermediates` | Revoked intermediate CAs |
+| `mozilla-disclosures` | Mozilla CA certificate disclosures |
+| `mozilla-certvalidations` | Mozilla cert validation requirements |
+| `mozilla-onecrl` | Mozilla certificate revocation list |
+| `apple-disclosures` | Apple CA certificate disclosures |
+| `chrome-disclosures` | Chrome CA certificate disclosures |
+
+### `crtsh-cli search [query]` — Search (when you need to find a cert first)
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--type` | `-t` | string | `""` | Search type (22 types, see crtsh-search skill) |
+| `--exclude-expired` | `-e` | bool | false | Exclude expired certificates |
+| `--deduplicate` | `-d` | bool | false | Deduplicate precertificate pairs |
+| `--page` | `-p` | int | 0 | Page number (1-based) |
+| `--page-size` | `-s` | int | 0 | Results per page |
+| `--json` | `-j` | bool | false | Output as JSON |
+
+### `crtsh-cli censys [query]` — Build Censys.io URL
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--type` | `-t` | string | `CN` | Search type for Censys |
 
 ## When to Use
 
@@ -78,6 +129,7 @@ When the user wants to understand the full certificate chain:
 
 User: "Show me certificate 26786991824"
 → `get_certificate(id=26786991824)`
+→ CLI: `crtsh-cli get-cert 26786991824 --json`
 
 ### Example 2: Domain → cert → CA chain
 
@@ -87,14 +139,27 @@ User: "What CA issued the certificate for example.com?"
 2. Get `issuer_ca_id` from result
 3. `get_ca(ca_id=<issuer_ca_id>)`
 
+CLI equivalent:
+```bash
+crtsh-cli search example.com -e --page-size 1 --json
+crtsh-cli get-ca <issuer_ca_id> --json
+```
+
 ### Example 3: CA disclosure investigation
 
 User: "What are Mozilla's CA disclosures?"
-
-1. `get_info_page(page="mozilla-disclosures")`
+→ `get_info_page(page="mozilla-disclosures")`
+→ CLI: `crtsh-cli info-page mozilla-disclosures --json`
 
 ### Example 4: Check for revoked intermediates
 
 User: "Are there any revoked intermediate CAs?"
+→ `get_info_page(page="revoked-intermediates")`
+→ CLI: `crtsh-cli info-page revoked-intermediates`
 
-1. `get_info_page(page="revoked-intermediates")`
+## Notes
+
+- crt.sh can return 5xx during peak load — SDK retries automatically (3 retries)
+- `entry_timestamp` can be null for some certificates
+- All CLI commands support `--json` for machine-readable output
+- Use `crtsh-cli list-pages` to see all 13 available info pages

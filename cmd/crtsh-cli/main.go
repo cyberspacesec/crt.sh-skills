@@ -232,6 +232,7 @@ func getInfoPageCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE:  runGetInfoPage,
 	}
+	cmd.Flags().BoolVarP(&outputJSON, "json", "j", false, "Output as JSON")
 	return cmd
 }
 
@@ -240,6 +241,12 @@ func runGetInfoPage(cmd *cobra.Command, args []string) error {
 	info, err := client.FetchInfoPage(context.Background(), args[0])
 	if err != nil {
 		return fmt.Errorf("failed to fetch info page: %w", err)
+	}
+
+	if outputJSON {
+		data, _ := json.MarshalIndent(info, "", "  ")
+		fmt.Println(string(data))
+		return nil
 	}
 
 	fmt.Printf("Page: %s\nTitle: %s\nDescription: %s\n\n%s\n",
@@ -254,6 +261,7 @@ func getCACmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE:  runGetCA,
 	}
+	cmd.Flags().BoolVarP(&outputJSON, "json", "j", false, "Output as JSON")
 	return cmd
 }
 
@@ -267,6 +275,12 @@ func runGetCA(cmd *cobra.Command, args []string) error {
 	info, err := client.FetchCAByID(context.Background(), caID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch CA info: %w", err)
+	}
+
+	if outputJSON {
+		data, _ := json.MarshalIndent(info, "", "  ")
+		fmt.Println(string(data))
+		return nil
 	}
 
 	fmt.Printf("CA Certificate #%d\n\n%s\n", caID, info.Content)
