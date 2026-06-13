@@ -1,0 +1,19 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - gosimple
+    - ineffassign
+    - typecheck
+
+issues:
+  exclude-rules:
+    # Allow unchecked Write/Encode in test HTTP handlers (common and harmless)
+    - path: _test\.go
+      linters:
+        - errcheck
