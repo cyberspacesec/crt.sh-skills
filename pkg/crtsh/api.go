@@ -130,14 +130,11 @@ func (c *Client) buildQuery(params QueryParams) url.Values {
 	query := url.Values{}
 	query.Set("output", "json")
 
-	// Set search type and corresponding parameters
-	if params.SearchType != "" {
-		query.Set("searchtype", params.SearchType)
-	}
-
+	// crt.sh JS builds URL as: ?<searchtype>=<value>
+	// e.g. ?CN=example.com, NOT ?searchtype=CN&common_name=example.com
+	// The searchtype is used AS the URL parameter key directly.
 	switch params.SearchType {
 	case "c":
-		// Certificate fingerprint search — crt.sh uses ?c=<fingerprint>
 		if params.Q != "" {
 			query.Set("c", params.Q)
 		}
@@ -177,60 +174,57 @@ func (c *Client) buildQuery(params QueryParams) url.Values {
 		if params.SHA256 != "" {
 			query.Set("sha256", params.SHA256)
 		}
-	case "CAID":
-		if params.CAID != "" {
-			query.Set("ca_id", params.CAID)
-		}
-	case "CAName":
-		if params.CAName != "" {
-			query.Set("ca_name", params.CAName)
-		}
 	case "ca":
-		// CA search — crt.sh uses ?ca=<value>
 		if params.Q != "" {
 			query.Set("ca", params.Q)
 		}
+	case "CAID":
+		if params.CAID != "" {
+			query.Set("CAID", params.CAID)
+		}
+	case "CAName":
+		if params.CAName != "" {
+			query.Set("CAName", params.CAName)
+		}
 	case "Identity":
 		if params.Identity != "" {
-			query.Set("identity", params.Identity)
+			query.Set("Identity", params.Identity)
 		}
 	case "CN":
 		if params.CN != "" {
-			query.Set("common_name", params.CN)
+			query.Set("CN", params.CN)
 		}
 	case "E":
 		if params.E != "" {
-			query.Set("email", params.E)
+			query.Set("E", params.E)
 		}
 	case "OU":
 		if params.OU != "" {
-			query.Set("organizational_unit", params.OU)
+			query.Set("OU", params.OU)
 		}
 	case "O":
 		if params.O != "" {
-			query.Set("organization", params.O)
+			query.Set("O", params.O)
 		}
 	case "dNSName":
 		if params.DNSName != "" {
-			query.Set("dns_name", params.DNSName)
+			query.Set("dNSName", params.DNSName)
 		}
 	case "rfc822Name":
 		if params.RFC822Name != "" {
-			query.Set("rfc822_name", params.RFC822Name)
+			query.Set("rfc822Name", params.RFC822Name)
 		}
 	case "iPAddress":
 		if params.IPAddress != "" {
-			query.Set("ip_address", params.IPAddress)
+			query.Set("iPAddress", params.IPAddress)
+		}
+	default:
+		// Default search uses ?q=<value>
+		if params.Q != "" {
+			query.Set("q", params.Q)
 		}
 	}
 
-	// Set general search parameters
-	// Only set q if no specific search type parameter was set
-	// (c, id, ctid, serial, ski, spkisha1, spkisha256, subjectsha1, sha1, sha256,
-	//  ca, CAID, CAName, Identity, CN, E, OU, O, dNSName, rfc822Name, iPAddress)
-	if params.Q != "" && params.SearchType == "" {
-		query.Set("q", params.Q)
-	}
 	if params.Match != "" {
 		query.Set("match", params.Match)
 	}
@@ -244,9 +238,6 @@ func (c *Client) buildQuery(params QueryParams) url.Values {
 	}
 	if params.ShowSQL {
 		query.Set("showSQL", "Y")
-	}
-	if params.SearchCensys {
-		query.Set("searchCensys", "on")
 	}
 
 	// Set linting parameters (crt.sh uses linter name as URL param key)
@@ -403,6 +394,64 @@ func (c *Client) FetchCAByID(ctx context.Context, caID int) (*InfoPage, error) {
 		Description: "CA certificate details from crt.sh",
 		Content:     string(body),
 	}, nil
+}
+
+// CensysUnsupportedTypes lists search types that Censys does not support.
+// These match the types that crt.sh's JS alert()s as unsupported.
+var CensysUnsupportedTypes = map[string]bool{
+	"id": true, "ctid": true, "ski": true, "spkisha1": true,
+	"spkisha256": true, "subjectsha1": true, "E": true,
+}
+
+// BuildCensysURL constructs a Censys.io search URL equivalent to crt.sh's searchCensys feature.
+// This mirrors the JavaScript logic from crt.sh's advanced search page.
+// Returns an error if the search type is not supported by Censys.
+func BuildCensysURL(searchType, value string) (string, error) {
+	if CensysUnsupportedTypes[searchType] {
+		return "", fmt.Errorf("censys does not support search type: %s", searchType)
+	}
+
+	baseURL := "https://search.censys.io/search?resource=certificates&q="
+
+	if value == "%" {
+		return baseURL, nil
+	}
+
+	var query string
+	switch searchType {
+	case "c":
+		v := strings.ToLower(value)
+		query = fmt.Sprintf("fingerprint_sha1:\"%s\" OR fingerprint_sha256:\"%s\"", v, v)
+	case "serial":
+		v := strings.ToLower(strings.ReplaceAll(value, ":", ""))
+		query = fmt.Sprintf("parsed.serial_number_hex:\"%s\"", v)
+	case "sha1":
+		query = fmt.Sprintf("fingerprint_sha1:\"%s\"", strings.ToLower(value))
+	case "sha256":
+		query = fmt.Sprintf("fingerprint_sha256:\"%s\"", strings.ToLower(value))
+	case "ca", "CAName":
+		query = fmt.Sprintf("parsed.issuer_dn:\"%s\"", value)
+	case "CAID":
+		return "", fmt.Errorf("censys does not support CAID search")
+	case "Identity":
+		query = fmt.Sprintf("names:\"%s\"", value)
+	case "CN":
+		query = fmt.Sprintf("parsed.subject.common_name:\"%s\"", value)
+	case "OU":
+		query = fmt.Sprintf("parsed.subject.organizational_unit:\"%s\"", value)
+	case "O":
+		query = fmt.Sprintf("parsed.subject.organization:\"%s\"", value)
+	case "dNSName":
+		query = fmt.Sprintf("parsed.extensions.subject_alt_name.dns_names:\"%s\"", value)
+	case "rfc822Name":
+		query = fmt.Sprintf("parsed.extensions.subject_alt_name.email_addresses:\"%s\"", value)
+	case "iPAddress":
+		query = fmt.Sprintf("parsed.extensions.subject_alt_name.ip_addresses:\"%s\"", value)
+	default:
+		return "", fmt.Errorf("unsupported search type for censys: %s", searchType)
+	}
+
+	return baseURL + url.QueryEscape(query), nil
 }
 
 func min(a, b int) int {

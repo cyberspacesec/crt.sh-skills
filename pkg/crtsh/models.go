@@ -65,7 +65,6 @@ type QueryParams struct {
 	ExcludeExpired bool
 	Deduplicate    bool
 	ShowSQL        bool
-	SearchCensys   bool
 	Linter         string
 	LintType       string
 	Page           int

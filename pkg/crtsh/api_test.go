@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestClient_SearchCertificates(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("searchtype") != "CN" || r.URL.Query().Get("common_name") != "example.com" {
+		if r.URL.Query().Get("CN") != "example.com" {
 			t.Errorf("Unexpected query parameters: %v", r.URL)
 		}
 
@@ -104,8 +105,7 @@ func TestClient_SearchCertificates_URLParams(t *testing.T) {
 				Q:          "ABCDEF123456",
 			},
 			expectedParams: map[string]string{
-				"searchtype": "c",
-				"c":          "ABCDEF123456",
+				"c": "ABCDEF123456",
 			},
 		},
 		{
@@ -115,8 +115,7 @@ func TestClient_SearchCertificates_URLParams(t *testing.T) {
 				Q:          "Let's Encrypt",
 			},
 			expectedParams: map[string]string{
-				"searchtype": "ca",
-				"ca":         "Let's Encrypt",
+				"ca": "Let's Encrypt",
 			},
 		},
 		{
@@ -126,6 +125,36 @@ func TestClient_SearchCertificates_URLParams(t *testing.T) {
 			},
 			expectedParams: map[string]string{
 				"q": "example.com",
+			},
+		},
+		{
+			name: "search type CN uses CN as URL param",
+			params: QueryParams{
+				SearchType: "CN",
+				CN:         "example.com",
+			},
+			expectedParams: map[string]string{
+				"CN": "example.com",
+			},
+		},
+		{
+			name: "search type CAID uses CAID as URL param",
+			params: QueryParams{
+				SearchType: "CAID",
+				CAID:       "16418",
+			},
+			expectedParams: map[string]string{
+				"CAID": "16418",
+			},
+		},
+		{
+			name: "search type dNSName uses dNSName as URL param",
+			params: QueryParams{
+				SearchType: "dNSName",
+				DNSName:    "example.com",
+			},
+			expectedParams: map[string]string{
+				"dNSName": "example.com",
 			},
 		},
 	}
@@ -144,6 +173,10 @@ func TestClient_SearchCertificates_URLParams(t *testing.T) {
 					if q := r.URL.Query().Get("q"); q != "" {
 						t.Errorf("param %q should not be set for search_type %q, got %q", "q", tt.params.SearchType, q)
 					}
+				}
+				// searchtype must NEVER be set as a URL param (crt.sh uses <type>=<value> directly)
+				if st := r.URL.Query().Get("searchtype"); st != "" {
+					t.Errorf("param %q should never be set in URL, got %q", "searchtype", st)
 				}
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode([]Certificate{})
@@ -204,8 +237,12 @@ func TestClient_RetryLogic(t *testing.T) {
 func TestGetCertificateByID(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// GetCertificateByID now uses SearchCertificates with search_type=id
-		if r.URL.Query().Get("searchtype") != "id" || r.URL.Query().Get("id") != "123" {
+		// URL should be ?id=123&output=json (NOT ?searchtype=id&id=123)
+		if r.URL.Query().Get("id") != "123" {
 			t.Errorf("Unexpected request: %v", r.URL)
+		}
+		if r.URL.Query().Get("searchtype") != "" {
+			t.Errorf("searchtype param should NOT be set: %v", r.URL)
 		}
 		certs := []Certificate{{ID: 123, SerialNumber: "TEST123"}}
 		json.NewEncoder(w).Encode(certs)
@@ -237,5 +274,101 @@ func TestGetCertificateByID_NotFound(t *testing.T) {
 	_, err := client.GetCertificateByID(context.Background(), 999999999)
 	if err == nil {
 		t.Error("Expected error for non-existent certificate")
+	}
+}
+
+func TestBuildCensysURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		searchType  string
+		value       string
+		wantErr     bool
+		wantContain string
+	}{
+		{
+			name:        "CN search",
+			searchType:  "CN",
+			value:       "example.com",
+			wantErr:     false,
+			wantContain: "parsed.subject.common_name",
+		},
+		{
+			name:        "dNSName search",
+			searchType:  "dNSName",
+			value:       "example.com",
+			wantErr:     false,
+			wantContain: "subject_alt_name.dns_names",
+		},
+		{
+			name:        "sha256 fingerprint",
+			searchType:  "sha256",
+			value:       "ABCD1234",
+			wantErr:     false,
+			wantContain: "fingerprint_sha256",
+		},
+		{
+			name:        "unsupported type id",
+			searchType:  "id",
+			value:       "123",
+			wantErr:     true,
+			wantContain: "",
+		},
+		{
+			name:        "unsupported type ski",
+			searchType:  "ski",
+			value:       "abc",
+			wantErr:     true,
+			wantContain: "",
+		},
+		{
+			name:        "unsupported type CAID",
+			searchType:  "CAID",
+			value:       "16418",
+			wantErr:     true,
+			wantContain: "",
+		},
+		{
+			name:        "c fingerprint (both sha1 and sha256)",
+			searchType:  "c",
+			value:       "ABCD1234",
+			wantErr:     false,
+			wantContain: "fingerprint_sha1",
+		},
+		{
+			name:        "serial number",
+			searchType:  "serial",
+			value:       "00:11:22:33",
+			wantErr:     false,
+			wantContain: "serial_number_hex",
+		},
+		{
+			name:        "iPAddress",
+			searchType:  "iPAddress",
+			value:       "1.2.3.4",
+			wantErr:     false,
+			wantContain: "subject_alt_name.ip_addresses",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			url, err := BuildCensysURL(tt.searchType, tt.value)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error for search_type %q", tt.searchType)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !strings.Contains(url, "search.censys.io") {
+				t.Errorf("URL should be on censys.io, got: %s", url)
+			}
+			if tt.wantContain != "" && !strings.Contains(url, tt.wantContain) {
+				t.Errorf("URL should contain %q, got: %s", tt.wantContain, url)
+			}
+		})
 	}
 }

@@ -43,9 +43,6 @@ func registerTools(s *server.MCPServer, client *crtsh.Client) {
 		mcp.WithBoolean("show_sql",
 			mcp.Description("Show the SQL query used by crt.sh for this search (for debugging)"),
 		),
-		mcp.WithBoolean("search_censys",
-			mcp.Description("Redirect search to Censys.io instead of crt.sh"),
-		),
 		mcp.WithNumber("page",
 			mcp.Description("Page number for pagination (1-based)"),
 		),
@@ -103,6 +100,23 @@ func registerTools(s *server.MCPServer, client *crtsh.Client) {
 		),
 	)
 	s.AddTool(caTool, getCAHandler(client))
+
+	// Tool: search_censys
+	censysTool := mcp.NewTool("search_censys",
+		mcp.WithDescription("Build a Censys.io certificate search URL equivalent to crt.sh's searchCensys feature. "+
+			"Returns a URL you can open to search Censys.io for the same certificate data. "+
+			"Not all crt.sh search types are supported by Censys (id, ctid, ski, spkisha1, spkisha256, subjectsha1, E are unsupported)."),
+		mcp.WithString("query",
+			mcp.Required(),
+			mcp.Description("Search term (same as would be used in crt.sh)"),
+		),
+		mcp.WithString("search_type",
+			mcp.Required(),
+			mcp.Description("Search type (same values as search_certificates, but Censys does not support: id, ctid, ski, spkisha1, spkisha256, subjectsha1, E, CAID)"),
+			mcp.Enum("c", "serial", "sha1", "sha256", "ca", "CAName", "Identity", "CN", "OU", "O", "dNSName", "rfc822Name", "iPAddress"),
+		),
+	)
+	s.AddTool(censysTool, searchCensysHandler(client))
 }
 
 func searchCertificatesHandler(client *crtsh.Client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -117,7 +131,6 @@ func searchCertificatesHandler(client *crtsh.Client) func(ctx context.Context, r
 		excludeExpired := req.GetBool("exclude_expired", false)
 		deduplicate := req.GetBool("deduplicate", false)
 		showSQL := req.GetBool("show_sql", false)
-		searchCensys := req.GetBool("search_censys", false)
 		page := int(req.GetFloat("page", 0))
 		pageSize := int(req.GetFloat("page_size", 0))
 		linter := req.GetString("linter", "")
@@ -129,7 +142,6 @@ func searchCertificatesHandler(client *crtsh.Client) func(ctx context.Context, r
 			ExcludeExpired: excludeExpired,
 			Deduplicate:    deduplicate,
 			ShowSQL:        showSQL,
-			SearchCensys:   searchCensys,
 			Linter:         linter,
 			LintType:       lintType,
 			Page:           page,
@@ -264,6 +276,38 @@ func getCAHandler(client *crtsh.Client) func(ctx context.Context, req mcp.CallTo
 		}
 
 		data, err := json.MarshalIndent(info, "", "  ")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("json marshal error: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+func searchCensysHandler(client *crtsh.Client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		query, err := req.RequireString("query")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("missing required parameter 'query': %v", err)), nil
+		}
+
+		searchType, err := req.RequireString("search_type")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("missing required parameter 'search_type': %v", err)), nil
+		}
+
+		censysURL, err := crtsh.BuildCensysURL(searchType, query)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("censys search error: %v", err)), nil
+		}
+
+		result := map[string]string{
+			"search_type": searchType,
+			"query":       query,
+			"censys_url":  censysURL,
+		}
+
+		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("json marshal error: %v", err)), nil
 		}
