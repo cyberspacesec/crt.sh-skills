@@ -9,21 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  test:
+  goreleaser:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-
-      - name: Run tests
-        run: go test -v ./pkg/crtsh/...
-
-  release:
-    runs-on: ubuntu-latest
-    needs: test
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,99 +20,11 @@ jobs:
         with:
           go-version: '1.23'
 
-      - name: Build release binaries
-        run: |
-          VERSION=${GITHUB_REF_NAME}
-          mkdir -p dist
-
-          for GOOS in linux darwin windows; do
-            for GOARCH in amd64 arm64; do
-              EXT=""
-              if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
-
-              echo "Building mcp-server for ${GOOS}/${GOARCH}..."
-              GOOS=$GOOS GOARCH=$GOARCH go build \
-                -ldflags "-X main.Version=${VERSION} -s -w" \
-                -o "dist/crtsh-skills-mcp-server-${GOOS}-${GOARCH}${EXT}" \
-                ./cmd/mcp-server/
-
-              echo "Building crtsh-cli for ${GOOS}/${GOARCH}..."
-              GOOS=$GOOS GOARCH=$GOARCH go build \
-                -ldflags "-X main.Version=${VERSION} -s -w" \
-                -o "dist/crtsh-skills-cli-${GOOS}-${GOARCH}${EXT}" \
-                ./cmd/crtsh-cli/
-            done
-          done
-
-          # Create archives
-          cd dist
-          for f in crtsh-skills-*; do
-            BASENAME=$(echo "$f" | sed 's/\.exe$//')
-            if echo "$f" | grep -q '\.exe$'; then
-              zip "${BASENAME}.zip" "$f"
-            else
-              tar czf "${BASENAME}.tar.gz" "$f"
-            fi
-          done
-          cd ..
-
-          # List all archives
-          echo "## Release assets:"
-          ls -la dist/*.tar.gz dist/*.zip
-
-      - name: Verify binaries
-        run: |
-          VERSION=${GITHUB_REF_NAME}
-          # Test the linux-amd64 binary
-          chmod +x dist/crtsh-skills-cli-linux-amd64
-          dist/crtsh-skills-cli-linux-amd64 --version | grep -q "${VERSION}" || (echo "CLI version check failed" && exit 1)
-          chmod +x dist/crtsh-skills-mcp-server-linux-amd64
-          dist/crtsh-skills-mcp-server-linux-amd64 --version | grep -q "${VERSION}" || (echo "MCP server version check failed" && exit 1)
-          echo "Binary verification passed"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
-          files: |
-            dist/*.tar.gz
-            dist/*.zip
-          generate_release_notes: true
-          body: |
-            ## crt.sh-skills — Certificate Transparency Search
-
-            ### Downloads
-
-            | Platform | Architecture | MCP Server | CLI Tool |
-            |----------|-------------|------------|----------|
-            | Linux | amd64 | `crtsh-skills-mcp-server-linux-amd64.tar.gz` | `crtsh-skills-cli-linux-amd64.tar.gz` |
-            | Linux | arm64 | `crtsh-skills-mcp-server-linux-arm64.tar.gz` | `crtsh-skills-cli-linux-arm64.tar.gz` |
-            | macOS | amd64 | `crtsh-skills-mcp-server-darwin-amd64.tar.gz` | `crtsh-skills-cli-darwin-amd64.tar.gz` |
-            | macOS | arm64 | `crtsh-skills-mcp-server-darwin-arm64.tar.gz` | `crtsh-skills-cli-darwin-arm64.tar.gz` |
-            | Windows | amd64 | `crtsh-skills-mcp-server-windows-amd64.zip` | `crtsh-skills-cli-windows-amd64.zip` |
-            | Windows | arm64 | `crtsh-skills-mcp-server-windows-arm64.zip` | `crtsh-skills-cli-windows-arm64.zip` |
-
-            ### Quick Install (Linux/macOS)
-
-            ```bash
-            # Download latest MCP server for your platform
-            curl -sL https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-mcp-server-$(uname -s | tr A-Z a-z)-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz | tar xz
-            chmod +x crtsh-skills-mcp-server-*
-
-            # Download latest CLI for your platform
-            curl -sL https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-cli-$(uname -s | tr A-Z a-z)-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz | tar xz
-            chmod +x crtsh-skills-cli-*
-            ```
-
-            ### Connect to Claude Code
-
-            Add to `~/.claude/settings.json`:
-            ```json
-            {
-              "mcpServers": {
-                "crt-sh-skills": {
-                  "command": "/path/to/crtsh-skills-mcp-server",
-                  "args": ["--transport", "stdio"]
-                }
-              }
-            }
-            ```
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

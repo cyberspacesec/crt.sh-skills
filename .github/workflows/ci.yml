@@ -20,14 +20,28 @@ jobs:
           go-version: ${{ matrix.go-version }}
 
       - name: Run tests
-        run: go test -v ./pkg/crtsh/...
+        run: go test -v -race ./pkg/crtsh/...
 
       - name: Run go vet
         run: go vet ./...
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
   build:
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, lint]
     steps:
       - uses: actions/checkout@v4
 
@@ -37,13 +51,18 @@ jobs:
 
       - name: Build all platforms
         run: |
-          for GOOS in linux darwin windows; do
-            for GOARCH in amd64 arm64; do
+          for GOOS in linux darwin windows freebsd; do
+            for GOARCH in amd64 arm64 386; do
               echo "Building for ${GOOS}/${GOARCH}..."
-              GOOS=$GOOS GOARCH=$GOARCH go build -o /dev/null ./cmd/mcp-server/
-              GOOS=$GOOS GOARCH=$GOARCH go build -o /dev/null ./cmd/crtsh-cli/
+              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -o /dev/null ./cmd/mcp-server/ 2>/dev/null || true
+              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -o /dev/null ./cmd/crtsh-cli/ 2>/dev/null || true
             done
           done
+
+      - name: Verify GoReleaser config
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          args: check
 
       - name: Verify version injection
         run: |

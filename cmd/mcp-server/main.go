@@ -25,13 +25,13 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("go-crt.sh MCP server v%s\n", Version)
+		fmt.Printf("crt.sh-skills MCP server v%s\n", Version)
 		os.Exit(0)
 	}
 
 	// Create MCP server
 	s := server.NewMCPServer(
-		"go-crt.sh",
+		"crt.sh-skills",
 		Version,
 		server.WithToolCapabilities(false),
 		server.WithRecovery(),

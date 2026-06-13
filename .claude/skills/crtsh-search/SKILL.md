@@ -1,7 +1,7 @@
 ---
 name: crtsh-search
 description: Use when searching certificate transparency logs for domains, subdomains, SSL/TLS certificates, or certificate transparency data via crt.sh. Triggers on mentions of CT logs, subdomain enumeration, certificate search, SSL fingerprint lookup, domain reconnaissance, or CA investigation.
-allowed-tools: ["mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__get_info_page", "mcp__go-crt-sh__get_ca", "mcp__go-crt-sh__search_censys"]
+allowed-tools: ["mcp__crt-sh-skills__search_certificates", "mcp__crt-sh-skills__get_certificate", "mcp__crt-sh-skills__get_info_page", "mcp__crt-sh-skills__get_ca", "mcp__crt-sh-skills__search_censys"]
 ---
 
 # crt.sh — Certificate Transparency Search
@@ -18,14 +18,22 @@ No Go SDK required. Download the binary for your platform from [GitHub Releases]
 
 ```bash
 # Detect platform and download MCP server
-OS=$(uname -s | tr A-Z a-z)
-ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/;s/i686/386/;s/i386/386/')
+echo "Detected: ${OS}/${ARCH}"
+
 curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-mcp-server-${OS}-${ARCH}.tar.gz" | tar xz
-chmod +x crtsh-skills-mcp-server-*
+chmod +x mcp-server
 
 # Download CLI tool
 curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-cli-${OS}-${ARCH}.tar.gz" | tar xz
-chmod +x crtsh-skills-cli-*
+chmod +x crtsh-cli
+```
+
+**Verify checksum:**
+```bash
+curl -sL https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/checksums.txt -o checksums.txt
+sha256sum -c --ignore-missing checksums.txt
 ```
 
 **Connect to Claude Code** — add to `~/.claude/settings.json`:
@@ -33,7 +41,7 @@ chmod +x crtsh-skills-cli-*
 {
   "mcpServers": {
     "crt-sh-skills": {
-      "command": "/path/to/crtsh-skills-mcp-server-linux-amd64",
+      "command": "/path/to/mcp-server",
       "args": ["--transport", "stdio"]
     }
   }
@@ -48,11 +56,10 @@ Requires Go 1.23+:
 git clone https://github.com/cyberspacesec/crt.sh-skills.git
 cd crt.sh-skills
 
-# Build MCP server
-go build -o mcp-server ./cmd/mcp-server/
-
-# Build CLI tool
-go build -o crtsh-cli ./cmd/crtsh-cli/
+# Build with version info
+VERSION=$(git describe --tags --always)
+go build -ldflags "-X main.Version=${VERSION}" -o mcp-server ./cmd/mcp-server/
+go build -ldflags "-X main.Version=${VERSION}" -o crtsh-cli ./cmd/crtsh-cli/
 
 # Run tests
 go test ./pkg/crtsh/...
@@ -164,6 +171,19 @@ get_info_page(page="mozilla-onecrl")
 
 CLI: `crtsh-cli info-page monitored-logs`
 
+### Auto-Pagination (Go SDK)
+
+Iterate over all pages without manual pagination:
+
+```go
+client.IterateCertificates(ctx, params, func(certs []crtsh.Certificate, pag *crtsh.Pagination) bool {
+    for _, cert := range certs {
+        fmt.Println(cert.CommonName)
+    }
+    return true // return false to stop
+})
+```
+
 ---
 
 ## 🎛️ `search_certificates` — All Parameters
@@ -233,6 +253,8 @@ CLI: `crtsh-cli list-types` to see this table interactively.
 | `any` | — | Match any identity value |
 | `FTS` | full text search | Full text search across all fields |
 
+CLI: `crtsh-cli list-match-modes` to see this table interactively.
+
 </details>
 
 ---
@@ -292,7 +314,18 @@ CLI: `crtsh-cli censys "example.com" --type CN`
 | `--lint-type` | | string | `""` | Lint output: `1 week`, `issues` |
 | `--page` | `-p` | int | 0 | Page number (1-based) |
 | `--page-size` | `-s` | int | 0 | Results per page |
-| `--json` | `-j` | bool | false | JSON output |
+| `--json` | `-j` | bool | false | JSON output (shorthand for --output json) |
+
+</details>
+
+<details>
+<summary><b>Root-level flags (apply to all commands)</b></summary>
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--timeout` | | duration | 30s | HTTP request timeout |
+| `--debug` | | bool | false | Enable debug output |
+| `--output` | `-o` | string | table | Output format: json, table, csv |
 
 </details>
 
@@ -307,6 +340,8 @@ CLI: `crtsh-cli censys "example.com" --type CN`
 | `crtsh-cli censys [query]` | `--type` `-t` | Build Censys.io URL |
 | `crtsh-cli list-types` | — | List all 22 search types |
 | `crtsh-cli list-pages` | — | List all 13 info pages |
+| `crtsh-cli list-linters` | — | List all 5 certificate linters |
+| `crtsh-cli list-match-modes` | — | List all 7 match modes |
 
 </details>
 
@@ -330,10 +365,28 @@ Each certificate from `search_certificates` contains:
 
 ---
 
+## 🔍 Error Handling (Go SDK)
+
+The SDK returns typed errors that can be inspected:
+
+```go
+certs, _, err := client.SearchCertificates(ctx, params)
+if crtsh.IsNotFoundError(err) {
+    // Handle 404
+} else if crtsh.IsRateLimitError(err) {
+    // Handle 429
+} else if crtsh.IsServerError(err) {
+    // Handle 5xx
+}
+```
+
+---
+
 ## ⚠️ Important Notes
 
 - **crt.sh can be slow** — returns 5xx during peak load. SDK retries automatically (3 retries, exponential backoff).
 - **Wildcard stripping** — `*.example.com` appears as `example.com` in `domains`.
 - **Null timestamps** — `entry_timestamp` can be null for some certificates (e.g. "Issuer Not Found").
-- **Pagination** — If `pagination.next_page` is set, more results are available. Use `page` + `page_size` to iterate.
+- **Pagination** — If `pagination.next_page` is set, more results are available. Use `page` + `page_size` to iterate, or use `IterateCertificates` for auto-pagination.
 - **All CLI commands support `--json`** for machine-readable output.
+- **CSV output** — Use `--output csv` for CSV format (useful for piping into other tools).

@@ -10,9 +10,9 @@ A Go SDK, CLI tool, and MCP server wrapping the [crt.sh](https://crt.sh/) Certif
 ┌─────────────────────────────────────────────┐
 │  Skills (.claude/skills/)                    │  AI-readable docs
 ├─────────────────────────────────────────────┤
-│  MCP Server (5 tools) + CLI Tool (8 cmds)   │  AI-callable + Human-callable
+│  MCP Server (5 tools) + CLI Tool (10 cmds)  │  AI-callable + Human-callable
 ├─────────────────────────────────────────────┤
-│  Go SDK (5 methods)                          │  Programmatic API
+│  Go SDK (6 methods + helpers)                │  Programmatic API
 └─────────────────────────────────────────────┘
 ```
 
@@ -26,24 +26,35 @@ No Go SDK required. Download from [GitHub Releases](https://github.com/cyberspac
 
 ```bash
 # Auto-detect platform and download MCP server
-OS=$(uname -s | tr A-Z a-z)
-ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/;s/i686/386/;s/i386/386/')
+echo "Detected: ${OS}/${ARCH}"
+
 curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-mcp-server-${OS}-${ARCH}.tar.gz" | tar xz
-chmod +x crtsh-skills-mcp-server-*
+chmod +x mcp-server
 
 # Download CLI tool
 curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-cli-${OS}-${ARCH}.tar.gz" | tar xz
-chmod +x crtsh-skills-cli-*
+chmod +x crtsh-cli
+```
+
+**Verify checksum:**
+```bash
+curl -sL https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/checksums.txt -o checksums.txt
+sha256sum -c --ignore-missing checksums.txt
 ```
 
 | Platform | Architecture | MCP Server | CLI Tool |
 |----------|-------------|------------|----------|
 | Linux | amd64 | `crtsh-skills-mcp-server-linux-amd64.tar.gz` | `crtsh-skills-cli-linux-amd64.tar.gz` |
 | Linux | arm64 | `crtsh-skills-mcp-server-linux-arm64.tar.gz` | `crtsh-skills-cli-linux-arm64.tar.gz` |
+| Linux | 386 | `crtsh-skills-mcp-server-linux-386.tar.gz` | `crtsh-skills-cli-linux-386.tar.gz` |
 | macOS | amd64 | `crtsh-skills-mcp-server-darwin-amd64.tar.gz` | `crtsh-skills-cli-darwin-amd64.tar.gz` |
 | macOS | arm64 | `crtsh-skills-mcp-server-darwin-arm64.tar.gz` | `crtsh-skills-cli-darwin-arm64.tar.gz` |
 | Windows | amd64 | `crtsh-skills-mcp-server-windows-amd64.zip` | `crtsh-skills-cli-windows-amd64.zip` |
 | Windows | arm64 | `crtsh-skills-mcp-server-windows-arm64.zip` | `crtsh-skills-cli-windows-arm64.zip` |
+| Windows | 386 | `crtsh-skills-mcp-server-windows-386.zip` | `crtsh-skills-cli-windows-386.zip` |
+| FreeBSD | amd64 | `crtsh-skills-mcp-server-freebsd-amd64.tar.gz` | `crtsh-skills-cli-freebsd-amd64.tar.gz` |
 
 ### Option 2: Go Install
 
@@ -59,8 +70,9 @@ Requires Go 1.23+:
 ```bash
 git clone https://github.com/cyberspacesec/crt.sh-skills.git
 cd crt.sh-skills
-go build -o mcp-server ./cmd/mcp-server/
-go build -o crtsh-cli ./cmd/crtsh-cli/
+VERSION=$(git describe --tags --always)
+go build -ldflags "-X main.Version=${VERSION}" -o mcp-server ./cmd/mcp-server/
+go build -ldflags "-X main.Version=${VERSION}" -o crtsh-cli ./cmd/crtsh-cli/
 go test ./pkg/crtsh/...
 ```
 
@@ -74,7 +86,7 @@ Add to `~/.claude/settings.json`:
 {
   "mcpServers": {
     "crt-sh-skills": {
-      "command": "/path/to/crtsh-skills-mcp-server-linux-amd64",
+      "command": "/path/to/mcp-server",
       "args": ["--transport", "stdio"]
     }
   }
@@ -106,6 +118,13 @@ crtsh-cli censys "example.com" --type CN
 # List available options
 crtsh-cli list-types
 crtsh-cli list-pages
+crtsh-cli list-linters
+crtsh-cli list-match-modes
+
+# Output formats
+crtsh-cli search example.com -o json    # JSON
+crtsh-cli search example.com -o csv     # CSV
+crtsh-cli search example.com -o table   # Table (default)
 ```
 
 ### As a Go SDK
@@ -122,7 +141,10 @@ import (
 )
 
 func main() {
-    client := crtsh.NewClient()
+    client := crtsh.NewClient(
+        crtsh.WithTimeout(10 * time.Second),
+        crtsh.WithRetryCount(5),
+    )
 
     // Search certificates
     certs, _, err := client.SearchCertificates(context.Background(), crtsh.QueryParams{
@@ -131,6 +153,9 @@ func main() {
         ExcludeExpired: true,
     })
     if err != nil {
+        if crtsh.IsServerError(err) {
+            log.Fatal("crt.sh is having issues:", err)
+        }
         log.Fatal(err)
     }
     for _, cert := range certs {
@@ -140,6 +165,14 @@ func main() {
     // Build a Censys URL
     url, _ := crtsh.BuildCensysURL("CN", "example.com")
     fmt.Println("Censys:", url)
+
+    // Iterate over all pages
+    client.IterateCertificates(ctx, params, func(certs []crtsh.Certificate, pag *crtsh.Pagination) bool {
+        for _, cert := range certs {
+            fmt.Println(cert.CommonName)
+        }
+        return true // return false to stop
+    })
 }
 ```
 
@@ -220,6 +253,13 @@ Build a Censys.io certificate search URL. Not all search types are supported by 
 ## Go SDK API
 
 ```go
+// Create client with options
+client := crtsh.NewClient(
+    crtsh.WithTimeout(10 * time.Second),
+    crtsh.WithRetryCount(5),
+    crtsh.WithDebug(true),
+)
+
 // Search certificates
 certs, pagination, err := client.SearchCertificates(ctx, crtsh.QueryParams{
     Q:              "example.com",
@@ -241,6 +281,25 @@ ca, err := client.FetchCAByID(ctx, 16418)
 
 // Build Censys URL
 url, err := crtsh.BuildCensysURL("CN", "example.com")
+
+// Auto-paginate through all results
+err := client.IterateCertificates(ctx, params, func(certs []crtsh.Certificate, pag *crtsh.Pagination) bool {
+    for _, cert := range certs {
+        fmt.Println(cert.CommonName)
+    }
+    return true // return false to stop early
+})
+
+// Typed error handling
+if crtsh.IsNotFoundError(err) { /* 404 */ }
+if crtsh.IsRateLimitError(err) { /* 429 */ }
+if crtsh.IsServerError(err) { /* 5xx */ }
+
+// Registry functions
+types := crtsh.SearchTypes()    // 22 search types
+modes := crtsh.MatchModes()     // 7 match modes
+linters := crtsh.Linters()      // 5 linters
+lintTypes := crtsh.LintTypes()  // 2 lint output types
 ```
 
 ## Certificate Model
@@ -263,7 +322,7 @@ url, err := crtsh.BuildCensysURL("CN", "example.com")
 
 ```bash
 # Run tests
-go test ./pkg/crtsh/...
+go test -v -race ./pkg/crtsh/...
 
 # Build all binaries
 go build -ldflags "-X main.Version=$(git describe --tags --always)" -o mcp-server ./cmd/mcp-server/
@@ -272,10 +331,13 @@ go build -ldflags "-X main.Version=$(git describe --tags --always)" -o crtsh-cli
 # Run MCP server
 go run ./cmd/mcp-server --transport stdio
 
+# Dry-run GoReleaser (no publish)
+goreleaser release --snapshot --clean
+
 # Create a release
-git tag v1.0.0
-git push origin v1.0.0
-# GitHub Actions will build and publish binaries automatically
+git tag v1.1.0
+git push origin v1.1.0
+# GitHub Actions + GoReleaser will build and publish binaries automatically
 ```
 
 ## License

@@ -1,10 +1,9 @@
-// api.go
+// api.go — Core SDK client for crt.sh Certificate Transparency search
 package crtsh
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,11 +18,7 @@ const (
 	maxBodySize    int64 = 10 * 1024 * 1024 // 10MB
 )
 
-var (
-	ErrMaxRetriesExceeded = errors.New("maximum retries exceeded")
-	ErrInvalidResponse    = errors.New("invalid server response")
-)
-
+// Client is the crt.sh API client.
 type Client struct {
 	BaseURL     string
 	HTTPClient  *http.Client
@@ -33,19 +28,31 @@ type Client struct {
 	rateLimiter <-chan time.Time
 }
 
-func NewClient() *Client {
-	return &Client{
+// NewClient creates a new crt.sh API client with the given options.
+// With no options, it returns a client with sensible defaults:
+//   - BaseURL: https://crt.sh/
+//   - Timeout: 30s
+//   - RetryCount: 3
+//   - UserAgent: crt.sh-Go-SDK/1.0
+func NewClient(opts ...ClientOption) *Client {
+	c := &Client{
 		BaseURL:    "https://crt.sh/",
 		HTTPClient: &http.Client{Timeout: defaultTimeout},
 		RetryCount: 3,
 		UserAgent:  "Mozilla/5.0 (compatible; crt.sh-Go-SDK/1.0)",
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
+// SearchCertificates searches certificate transparency logs via crt.sh.
+// It supports 22 search types, 7 match modes, linting, and pagination.
 func (c *Client) SearchCertificates(ctx context.Context, params QueryParams) ([]Certificate, *Pagination, error) {
 	u, err := url.Parse(c.BaseURL)
 	if err != nil {
-		return nil, nil, fmt.Errorf("url parse error: %w", err)
+		return nil, nil, &Error{Type: ErrorTypeRequest, Message: "url parse error", Cause: err}
 	}
 
 	query := c.buildQuery(params)
@@ -60,7 +67,7 @@ func (c *Client) SearchCertificates(ctx context.Context, params QueryParams) ([]
 	for attempt := 0; attempt <= c.RetryCount; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("request creation failed: %w", err)
+			return nil, nil, &Error{Type: ErrorTypeRequest, Message: "request creation failed", Cause: err}
 		}
 
 		req.Header.Set("User-Agent", c.UserAgent)
@@ -69,7 +76,7 @@ func (c *Client) SearchCertificates(ctx context.Context, params QueryParams) ([]
 		resp, body, err = c.doRequest(req)
 		if err != nil {
 			if attempt == c.RetryCount {
-				return nil, nil, fmt.Errorf("%w: %v", ErrMaxRetriesExceeded, err)
+				return nil, nil, &Error{Type: ErrorTypeSearch, Message: "maximum retries exceeded", Cause: err}
 			}
 			select {
 			case <-time.After(exponentialBackoff(attempt)):
@@ -100,27 +107,27 @@ func (c *Client) SearchCertificates(ctx context.Context, params QueryParams) ([]
 	}
 
 	if err := json.Unmarshal(body, &certs); err != nil {
-		return nil, nil, fmt.Errorf("json decode error: %w", err)
+		return nil, nil, &Error{Type: ErrorTypeParse, Message: "json decode error", Cause: err}
 	}
 
 	pagination := c.parsePagination(resp, params.Page, params.PageSize)
 	return certs, pagination, nil
 }
 
+// GetCertificateByID retrieves a specific certificate from crt.sh by its numeric ID.
+// crt.sh does not support output=json for the ?id= endpoint, so this method
+// uses SearchCertificates with search_type=id instead.
 func (c *Client) GetCertificateByID(ctx context.Context, id int) (*Certificate, error) {
-	// crt.sh does not support output=json for the ?id= endpoint.
-	// Use SearchCertificates with search_type=id instead, which correctly
-	// sends ?searchtype=id&id=<value>&output=json
 	certs, _, err := c.SearchCertificates(ctx, QueryParams{
 		SearchType: "id",
 		ID:         strconv.Itoa(id),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("get certificate by id failed: %w", err)
+		return nil, &Error{Type: ErrorTypeSearch, Message: "get certificate by id failed", Cause: err}
 	}
 
 	if len(certs) == 0 {
-		return nil, fmt.Errorf("certificate not found: id=%d", id)
+		return nil, &Error{Type: ErrorTypeNotFound, Message: fmt.Sprintf("certificate not found: id=%d", id)}
 	}
 
 	return &certs[0], nil
@@ -337,17 +344,20 @@ var InfoPages = map[string]InfoPage{
 func (c *Client) FetchInfoPage(ctx context.Context, pagePath string) (*InfoPage, error) {
 	info, ok := InfoPages[pagePath]
 	if !ok {
-		return nil, fmt.Errorf("unknown info page: %s (available: cert-populations, revoked-intermediates, ca-issuers, ocsp-responders, test-websites, monitored-logs, accepted-roots-missing, gen-add-chain, mozilla-disclosures, mozilla-certvalidations, mozilla-onecrl, apple-disclosures, chrome-disclosures)", pagePath)
+		return nil, &Error{
+			Type:    ErrorTypeInvalid,
+			Message: fmt.Sprintf("unknown info page: %s", pagePath),
+		}
 	}
 
 	u, err := url.Parse(c.BaseURL + pagePath)
 	if err != nil {
-		return nil, fmt.Errorf("url parse error: %w", err)
+		return nil, &Error{Type: ErrorTypeRequest, Message: "url parse error", Cause: err}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("request creation failed: %w", err)
+		return nil, &Error{Type: ErrorTypeRequest, Message: "request creation failed", Cause: err}
 	}
 
 	req.Header.Set("User-Agent", c.UserAgent)
@@ -358,7 +368,7 @@ func (c *Client) FetchInfoPage(ctx context.Context, pagePath string) (*InfoPage,
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch info page (status %d): %s", resp.StatusCode, string(body[:min(len(body), 200)]))
+		return nil, c.parseAPIError(resp.StatusCode, body)
 	}
 
 	info.Content = string(body)
@@ -369,12 +379,12 @@ func (c *Client) FetchInfoPage(ctx context.Context, pagePath string) (*InfoPage,
 func (c *Client) FetchCAByID(ctx context.Context, caID int) (*InfoPage, error) {
 	u, err := url.Parse(fmt.Sprintf("%sca?id=%d", c.BaseURL, caID))
 	if err != nil {
-		return nil, fmt.Errorf("url parse error: %w", err)
+		return nil, &Error{Type: ErrorTypeRequest, Message: "url parse error", Cause: err}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("request creation failed: %w", err)
+		return nil, &Error{Type: ErrorTypeRequest, Message: "request creation failed", Cause: err}
 	}
 
 	req.Header.Set("User-Agent", c.UserAgent)
@@ -385,7 +395,7 @@ func (c *Client) FetchCAByID(ctx context.Context, caID int) (*InfoPage, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch CA info (status %d): %s", resp.StatusCode, string(body[:min(len(body), 200)]))
+		return nil, c.parseAPIError(resp.StatusCode, body)
 	}
 
 	return &InfoPage{
@@ -408,7 +418,10 @@ var CensysUnsupportedTypes = map[string]bool{
 // Returns an error if the search type is not supported by Censys.
 func BuildCensysURL(searchType, value string) (string, error) {
 	if CensysUnsupportedTypes[searchType] {
-		return "", fmt.Errorf("censys does not support search type: %s", searchType)
+		return "", &Error{
+			Type:    ErrorTypeInvalid,
+			Message: fmt.Sprintf("censys does not support search type: %s", searchType),
+		}
 	}
 
 	baseURL := "https://search.censys.io/search?resource=certificates&q="
@@ -432,7 +445,10 @@ func BuildCensysURL(searchType, value string) (string, error) {
 	case "ca", "CAName":
 		query = fmt.Sprintf("parsed.issuer_dn:\"%s\"", value)
 	case "CAID":
-		return "", fmt.Errorf("censys does not support CAID search")
+		return "", &Error{
+			Type:    ErrorTypeInvalid,
+			Message: "censys does not support CAID search",
+		}
 	case "Identity":
 		query = fmt.Sprintf("names:\"%s\"", value)
 	case "CN":
@@ -448,17 +464,13 @@ func BuildCensysURL(searchType, value string) (string, error) {
 	case "iPAddress":
 		query = fmt.Sprintf("parsed.extensions.subject_alt_name.ip_addresses:\"%s\"", value)
 	default:
-		return "", fmt.Errorf("unsupported search type for censys: %s", searchType)
+		return "", &Error{
+			Type:    ErrorTypeInvalid,
+			Message: fmt.Sprintf("unsupported search type for censys: %s", searchType),
+		}
 	}
 
 	return baseURL + url.QueryEscape(query), nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func (c *Client) doRequest(req *http.Request) (*http.Response, []byte, error) {
@@ -468,13 +480,13 @@ func (c *Client) doRequest(req *http.Request) (*http.Response, []byte, error) {
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("http request failed: %w", err)
+		return nil, nil, &Error{Type: ErrorTypeRequest, Message: "http request failed", Cause: err}
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
 	if err != nil {
-		return nil, nil, fmt.Errorf("body read error: %w", err)
+		return nil, nil, &Error{Type: ErrorTypeParse, Message: "body read error", Cause: err}
 	}
 
 	if c.Debug {
@@ -489,10 +501,26 @@ func (c *Client) parseAPIError(statusCode int, body []byte) error {
 	var apiErr struct {
 		Error string `json:"error"`
 	}
-	if json.Unmarshal(body, &apiErr) == nil && apiErr.Error != "" {
-		return fmt.Errorf("api error (%d): %s", statusCode, apiErr.Error)
+
+	// Determine error type based on status code
+	var errType ErrorType
+	switch {
+	case statusCode == http.StatusNotFound:
+		errType = ErrorTypeNotFound
+	case statusCode == http.StatusTooManyRequests:
+		errType = ErrorTypeRateLimit
+	case statusCode >= 500:
+		errType = ErrorTypeServer
+	default:
+		errType = ErrorTypeSearch
 	}
-	return fmt.Errorf("unexpected status code: %d", statusCode)
+
+	msg := fmt.Sprintf("status %d", statusCode)
+	if json.Unmarshal(body, &apiErr) == nil && apiErr.Error != "" {
+		msg = fmt.Sprintf("status %d: %s", statusCode, apiErr.Error)
+	}
+
+	return &Error{Type: errType, Message: msg}
 }
 
 func (c *Client) parsePagination(resp *http.Response, currentPage, pageSize int) *Pagination {

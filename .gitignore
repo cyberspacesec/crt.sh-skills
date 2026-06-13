@@ -77,4 +77,8 @@ secrets.yaml
 secrets.yml
 templates-custom/
 tmp/
+# Built binaries
+/crtsh-cli
+/mcp-server
+
 vendor/

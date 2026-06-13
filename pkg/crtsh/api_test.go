@@ -4,6 +4,7 @@ package crtsh
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,8 +31,7 @@ func TestClient_SearchCertificates(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	client := NewClient()
-	client.BaseURL = testServer.URL + "/"
+	client := NewClient(WithBaseURL(testServer.URL + "/"))
 
 	params := QueryParams{
 		SearchType: "CN",
@@ -183,9 +183,7 @@ func TestClient_SearchCertificates_URLParams(t *testing.T) {
 			}))
 			defer testServer.Close()
 
-			client := NewClient()
-			client.BaseURL = testServer.URL + "/"
-			client.RetryCount = 0
+			client := NewClient(WithBaseURL(testServer.URL + "/"), WithRetryCount(0))
 
 			_, _, _ = client.SearchCertificates(context.Background(), tt.params)
 		})
@@ -199,12 +197,50 @@ func TestClient_HandleHTTPErrors(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	client := NewClient()
-	client.BaseURL = testServer.URL + "/"
+	client := NewClient(WithBaseURL(testServer.URL + "/"), WithRetryCount(0))
 
 	_, _, err := client.SearchCertificates(context.Background(), QueryParams{})
-	if err == nil || err.Error() != "api error (500): server error" {
-		t.Errorf("Expected server error, got: %v", err)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !IsServerError(err) {
+		t.Errorf("Expected server error, got: %v (type: %T)", err, err)
+	}
+}
+
+func TestClient_HandleRateLimitError(t *testing.T) {
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error": "rate limited"}`))
+	}))
+	defer testServer.Close()
+
+	client := NewClient(WithBaseURL(testServer.URL + "/"), WithRetryCount(0))
+
+	_, _, err := client.SearchCertificates(context.Background(), QueryParams{})
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !IsRateLimitError(err) {
+		t.Errorf("Expected rate limit error, got: %v", err)
+	}
+}
+
+func TestClient_HandleNotFoundError(t *testing.T) {
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error": "not found"}`))
+	}))
+	defer testServer.Close()
+
+	client := NewClient(WithBaseURL(testServer.URL + "/"), WithRetryCount(0))
+
+	_, _, err := client.SearchCertificates(context.Background(), QueryParams{})
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !IsNotFoundError(err) {
+		t.Errorf("Expected not found error, got: %v", err)
 	}
 }
 
@@ -221,9 +257,7 @@ func TestClient_RetryLogic(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	client := NewClient()
-	client.BaseURL = testServer.URL + "/"
-	client.RetryCount = 3
+	client := NewClient(WithBaseURL(testServer.URL + "/"), WithRetryCount(3))
 
 	_, _, err := client.SearchCertificates(context.Background(), QueryParams{})
 	if err != nil {
@@ -236,8 +270,6 @@ func TestClient_RetryLogic(t *testing.T) {
 
 func TestGetCertificateByID(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// GetCertificateByID now uses SearchCertificates with search_type=id
-		// URL should be ?id=123&output=json (NOT ?searchtype=id&id=123)
 		if r.URL.Query().Get("id") != "123" {
 			t.Errorf("Unexpected request: %v", r.URL)
 		}
@@ -249,8 +281,7 @@ func TestGetCertificateByID(t *testing.T) {
 	}))
 	defer testServer.Close()
 
-	client := NewClient()
-	client.BaseURL = testServer.URL + "/"
+	client := NewClient(WithBaseURL(testServer.URL + "/"))
 
 	cert, err := client.GetCertificateByID(context.Background(), 123)
 	if err != nil {
@@ -263,17 +294,18 @@ func TestGetCertificateByID(t *testing.T) {
 
 func TestGetCertificateByID_NotFound(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Return empty array for non-existent certificate
 		json.NewEncoder(w).Encode([]Certificate{})
 	}))
 	defer testServer.Close()
 
-	client := NewClient()
-	client.BaseURL = testServer.URL + "/"
+	client := NewClient(WithBaseURL(testServer.URL + "/"))
 
 	_, err := client.GetCertificateByID(context.Background(), 999999999)
 	if err == nil {
 		t.Error("Expected error for non-existent certificate")
+	}
+	if !IsNotFoundError(err) {
+		t.Errorf("Expected not found error, got: %v", err)
 	}
 }
 
@@ -370,5 +402,164 @@ func TestBuildCensysURL(t *testing.T) {
 				t.Errorf("URL should contain %q, got: %s", tt.wantContain, url)
 			}
 		})
+	}
+}
+
+func TestClientOption_WithTimeout(t *testing.T) {
+	client := NewClient(WithTimeout(5 * time.Second))
+	if client.HTTPClient.Timeout != 5*time.Second {
+		t.Errorf("Expected timeout 5s, got %v", client.HTTPClient.Timeout)
+	}
+}
+
+func TestClientOption_WithRetryCount(t *testing.T) {
+	client := NewClient(WithRetryCount(5))
+	if client.RetryCount != 5 {
+		t.Errorf("Expected retry count 5, got %d", client.RetryCount)
+	}
+}
+
+func TestClientOption_WithDebug(t *testing.T) {
+	client := NewClient(WithDebug(true))
+	if !client.Debug {
+		t.Error("Expected debug to be true")
+	}
+}
+
+func TestClientOption_WithUserAgent(t *testing.T) {
+	client := NewClient(WithUserAgent("test-agent/1.0"))
+	if client.UserAgent != "test-agent/1.0" {
+		t.Errorf("Expected user agent 'test-agent/1.0', got %q", client.UserAgent)
+	}
+}
+
+func TestClientOption_WithBaseURL(t *testing.T) {
+	client := NewClient(WithBaseURL("http://localhost:8080/"))
+	if client.BaseURL != "http://localhost:8080/" {
+		t.Errorf("Expected base URL 'http://localhost:8080/', got %q", client.BaseURL)
+	}
+}
+
+func TestClientOption_Defaults(t *testing.T) {
+	client := NewClient()
+	if client.BaseURL != "https://crt.sh/" {
+		t.Errorf("Expected default base URL, got %q", client.BaseURL)
+	}
+	if client.RetryCount != 3 {
+		t.Errorf("Expected default retry count 3, got %d", client.RetryCount)
+	}
+	if client.Debug {
+		t.Error("Expected default debug to be false")
+	}
+}
+
+func TestSearchTypes(t *testing.T) {
+	types := SearchTypes()
+	if len(types) != 22 {
+		t.Errorf("Expected 22 search types, got %d", len(types))
+	}
+	// Verify first entry is the default empty type
+	if types[0].Type != "" {
+		t.Errorf("Expected first type to be empty string, got %q", types[0].Type)
+	}
+	// Verify each type has a description
+	for _, st := range types {
+		if st.Description == "" {
+			t.Errorf("Search type %q has empty description", st.Type)
+		}
+	}
+}
+
+func TestMatchModes(t *testing.T) {
+	modes := MatchModes()
+	if len(modes) != 7 {
+		t.Errorf("Expected 7 match modes, got %d", len(modes))
+	}
+}
+
+func TestLinters(t *testing.T) {
+	linters := Linters()
+	if len(linters) != 5 {
+		t.Errorf("Expected 5 linters, got %d", len(linters))
+	}
+}
+
+func TestLintTypes(t *testing.T) {
+	types := LintTypes()
+	if len(types) != 2 {
+		t.Errorf("Expected 2 lint types, got %d", len(types))
+	}
+}
+
+func TestValidSearchTypes(t *testing.T) {
+	valid := ValidSearchTypes()
+	if !valid["CN"] {
+		t.Error("Expected CN to be a valid search type")
+	}
+	if !valid[""] {
+		t.Error("Expected empty string to be a valid search type")
+	}
+	if valid["INVALID"] {
+		t.Error("Expected INVALID to not be a valid search type")
+	}
+}
+
+func TestIterateCertificates(t *testing.T) {
+	page := 0
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page++
+		certs := []Certificate{{ID: page, SerialNumber: "TEST"}}
+		w.Header().Set("Link", fmt.Sprintf("<%s?page=%d>; rel=\"next\"", r.URL.Path, page+1))
+		if page >= 3 {
+			w.Header().Del("Link")
+		}
+		json.NewEncoder(w).Encode(certs)
+	}))
+	defer testServer.Close()
+
+	client := NewClient(WithBaseURL(testServer.URL + "/"))
+
+	var collected [][]Certificate
+	err := client.IterateCertificates(context.Background(), QueryParams{
+		Q: "test",
+	}, func(certs []Certificate, pagination *Pagination) bool {
+		collected = append(collected, certs)
+		return len(collected) < 3
+	})
+	if err != nil {
+		t.Fatalf("IterateCertificates failed: %v", err)
+	}
+	if len(collected) != 3 {
+		t.Errorf("Expected 3 pages, got %d", len(collected))
+	}
+}
+
+func TestIterateCertificates_EarlyStop(t *testing.T) {
+	callCount := 0
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		certs := []Certificate{{ID: callCount, SerialNumber: "TEST"}}
+		w.Header().Set("Link", fmt.Sprintf("<%s?page=%d>; rel=\"next\"", r.URL.Path, callCount+1))
+		json.NewEncoder(w).Encode(certs)
+	}))
+	defer testServer.Close()
+
+	client := NewClient(WithBaseURL(testServer.URL + "/"))
+
+	var collected [][]Certificate
+	err := client.IterateCertificates(context.Background(), QueryParams{
+		Q: "test",
+	}, func(certs []Certificate, pagination *Pagination) bool {
+		collected = append(collected, certs)
+		return false // stop immediately after first page
+	})
+	if err != nil {
+		t.Fatalf("IterateCertificates failed: %v", err)
+	}
+	if len(collected) != 1 {
+		t.Errorf("Expected 1 page (early stop), got %d", len(collected))
+	}
+	if callCount != 1 {
+		t.Errorf("Expected 1 API call, got %d", callCount)
 	}
 }

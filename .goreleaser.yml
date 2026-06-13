@@ -1,0 +1,138 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: mcp-server
+    main: ./cmd/mcp-server/
+    binary: mcp-server
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+      - "386"
+    ignore:
+      - goos: darwin
+        goarch: "386"
+      - goos: freebsd
+        goarch: arm64
+
+  - id: crtsh-cli
+    main: ./cmd/crtsh-cli/
+    binary: crtsh-cli
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+      - "386"
+    ignore:
+      - goos: darwin
+        goarch: "386"
+      - goos: freebsd
+        goarch: arm64
+
+archives:
+  - id: mcp-server-archives
+    builds:
+      - mcp-server
+    name_template: >-
+      crtsh-skills-mcp-server-
+      {{- .Os }}-
+      {{- if eq .Arch "amd64" }}amd64
+      {{- else if eq .Arch "arm64" }}arm64
+      {{- else if eq .Arch "386" }}386
+      {{- else }}{{ .Arch }}{{ end }}
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+
+  - id: cli-archives
+    builds:
+      - crtsh-cli
+    name_template: >-
+      crtsh-skills-cli-
+      {{- .Os }}-
+      {{- if eq .Arch "amd64" }}amd64
+      {{- else if eq .Arch "arm64" }}arm64
+      {{- else if eq .Arch "386" }}386
+      {{- else }}{{ .Arch }}{{ end }}
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "merge conflict"
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: Bug Fixes
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Others
+      order: 999
+
+release:
+  footer: |
+    ## Quick Install (Linux/macOS)
+
+    ```bash
+    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+    ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+    curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/download/{{.Tag}}/crtsh-skills-mcp-server-${OS}-${ARCH}.tar.gz" | tar xz
+    chmod +x mcp-server
+
+    curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/download/{{.Tag}}/crtsh-skills-cli-${OS}-${ARCH}.tar.gz" | tar xz
+    chmod +x crtsh-cli
+    ```
+
+    ## Verify Checksum
+
+    ```bash
+    curl -sL https://github.com/cyberspacesec/crt.sh-skills/releases/download/{{.Tag}}/checksums.txt -o checksums.txt
+    sha256sum -c --ignore-missing checksums.txt
+    ```
+
+    ## Build from Source
+
+    Requires Go 1.23+:
+
+    ```bash
+    git clone https://github.com/cyberspacesec/crt.sh-skills.git
+    cd crt.sh-skills
+    go build -ldflags "-X main.Version={{.Version}}" -o mcp-server ./cmd/mcp-server/
+    go build -ldflags "-X main.Version={{.Version}}" -o crtsh-cli ./cmd/crtsh-cli/
+    ```

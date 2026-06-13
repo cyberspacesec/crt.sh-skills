@@ -1,7 +1,7 @@
 ---
 name: crtsh-cert
 description: Use when retrieving specific certificate or CA details from crt.sh. Triggers on certificate ID lookup, CA investigation, cert validity checking, or when user provides a crt.sh numeric ID or CA ID.
-allowed-tools: ["mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__get_ca", "mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_info_page", "mcp__go-crt-sh__search_censys"]
+allowed-tools: ["mcp__crt-sh-skills__get_certificate", "mcp__crt-sh-skills__get_ca", "mcp__crt-sh-skills__search_certificates", "mcp__crt-sh-skills__get_info_page", "mcp__crt-sh-skills__search_censys"]
 ---
 
 # crt.sh — Certificate & CA Detail Lookup
@@ -18,14 +18,22 @@ No Go SDK required. Download from [GitHub Releases](https://github.com/cyberspac
 
 ```bash
 # Detect platform and download
-OS=$(uname -s | tr A-Z a-z)
-ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/;s/i686/386/;s/i386/386/')
+echo "Detected: ${OS}/${ARCH}"
+
 curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-mcp-server-${OS}-${ARCH}.tar.gz" | tar xz
-chmod +x crtsh-skills-mcp-server-*
+chmod +x mcp-server
 
 # Download CLI tool
 curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-cli-${OS}-${ARCH}.tar.gz" | tar xz
-chmod +x crtsh-skills-cli-*
+chmod +x crtsh-cli
+```
+
+**Verify checksum:**
+```bash
+curl -sL https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/checksums.txt -o checksums.txt
+sha256sum -c --ignore-missing checksums.txt
 ```
 
 ### Option 2: Clone & Build from Source
@@ -35,8 +43,9 @@ Requires Go 1.23+:
 ```bash
 git clone https://github.com/cyberspacesec/crt.sh-skills.git
 cd crt.sh-skills
-go build -o mcp-server ./cmd/mcp-server/
-go build -o crtsh-cli ./cmd/crtsh-cli/
+VERSION=$(git describe --tags --always)
+go build -ldflags "-X main.Version=${VERSION}" -o mcp-server ./cmd/mcp-server/
+go build -ldflags "-X main.Version=${VERSION}" -o crtsh-cli ./cmd/crtsh-cli/
 ```
 
 ---
@@ -217,11 +226,14 @@ All 13 pages: `crtsh-cli list-pages`
 ```bash
 crtsh-cli get-cert 26786991824              # Certificate details
 crtsh-cli get-cert 26786991824 --json       # JSON output
+crtsh-cli get-cert 26786991824 -o csv       # CSV output
 crtsh-cli get-ca 16418                      # CA certificate details
 crtsh-cli get-ca 16418 --json               # JSON output
 crtsh-cli info-page mozilla-disclosures     # CA disclosure info
 crtsh-cli search example.com -e --json      # Find certs first
 ```
+
+Root-level flags: `--timeout 30s`, `--debug`, `--output/-o` (json|table|csv)
 
 ---
 
