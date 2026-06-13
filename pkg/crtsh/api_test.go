@@ -119,6 +119,15 @@ func TestClient_SearchCertificates_URLParams(t *testing.T) {
 				"ca":         "Let's Encrypt",
 			},
 		},
+		{
+			name: "default search uses q param",
+			params: QueryParams{
+				Q: "example.com",
+			},
+			expectedParams: map[string]string{
+				"q": "example.com",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -128,6 +137,12 @@ func TestClient_SearchCertificates_URLParams(t *testing.T) {
 					got := r.URL.Query().Get(key)
 					if got != expected {
 						t.Errorf("param %q: got %q, want %q", key, got, expected)
+					}
+				}
+				// For c and ca search types, q must NOT be set
+				if tt.params.SearchType == "c" || tt.params.SearchType == "ca" {
+					if q := r.URL.Query().Get("q"); q != "" {
+						t.Errorf("param %q should not be set for search_type %q, got %q", "q", tt.params.SearchType, q)
 					}
 				}
 				w.WriteHeader(http.StatusOK)
@@ -188,11 +203,12 @@ func TestClient_RetryLogic(t *testing.T) {
 
 func TestGetCertificateByID(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" || r.URL.Query().Get("id") != "123" {
+		// GetCertificateByID now uses SearchCertificates with search_type=id
+		if r.URL.Query().Get("searchtype") != "id" || r.URL.Query().Get("id") != "123" {
 			t.Errorf("Unexpected request: %v", r.URL)
 		}
-		cert := Certificate{ID: 123, SerialNumber: "TEST123"}
-		json.NewEncoder(w).Encode(cert)
+		certs := []Certificate{{ID: 123, SerialNumber: "TEST123"}}
+		json.NewEncoder(w).Encode(certs)
 	}))
 	defer testServer.Close()
 
@@ -205,5 +221,21 @@ func TestGetCertificateByID(t *testing.T) {
 	}
 	if cert.ID != 123 || cert.SerialNumber != "TEST123" {
 		t.Errorf("Unexpected certificate data: %+v", cert)
+	}
+}
+
+func TestGetCertificateByID_NotFound(t *testing.T) {
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return empty array for non-existent certificate
+		json.NewEncoder(w).Encode([]Certificate{})
+	}))
+	defer testServer.Close()
+
+	client := NewClient()
+	client.BaseURL = testServer.URL + "/"
+
+	_, err := client.GetCertificateByID(context.Background(), 999999999)
+	if err == nil {
+		t.Error("Expected error for non-existent certificate")
 	}
 }

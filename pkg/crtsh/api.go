@@ -108,34 +108,22 @@ func (c *Client) SearchCertificates(ctx context.Context, params QueryParams) ([]
 }
 
 func (c *Client) GetCertificateByID(ctx context.Context, id int) (*Certificate, error) {
-	u, err := url.Parse(fmt.Sprintf("%s?output=json&id=%d", c.BaseURL, id))
+	// crt.sh does not support output=json for the ?id= endpoint.
+	// Use SearchCertificates with search_type=id instead, which correctly
+	// sends ?searchtype=id&id=<value>&output=json
+	certs, _, err := c.SearchCertificates(ctx, QueryParams{
+		SearchType: "id",
+		ID:         strconv.Itoa(id),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("url parse error: %w", err)
+		return nil, fmt.Errorf("get certificate by id failed: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("request creation failed: %w", err)
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("certificate not found: id=%d", id)
 	}
 
-	req.Header.Set("User-Agent", c.UserAgent)
-	req.Header.Set("Accept", "application/json")
-
-	resp, body, err := c.doRequest(req)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, c.parseAPIError(resp.StatusCode, body)
-	}
-
-	var cert Certificate
-	if err := json.Unmarshal(body, &cert); err != nil {
-		return nil, fmt.Errorf("json decode error: %w", err)
-	}
-
-	return &cert, nil
+	return &certs[0], nil
 }
 
 func (c *Client) buildQuery(params QueryParams) url.Values {
@@ -237,7 +225,10 @@ func (c *Client) buildQuery(params QueryParams) url.Values {
 	}
 
 	// Set general search parameters
-	if params.Q != "" {
+	// Only set q if no specific search type parameter was set
+	// (c, id, ctid, serial, ski, spkisha1, spkisha256, subjectsha1, sha1, sha256,
+	//  ca, CAID, CAName, Identity, CN, E, OU, O, dNSName, rfc822Name, iPAddress)
+	if params.Q != "" && params.SearchType == "" {
 		query.Set("q", params.Q)
 	}
 	if params.Match != "" {
@@ -381,6 +372,37 @@ func (c *Client) FetchInfoPage(ctx context.Context, pagePath string) (*InfoPage,
 
 	info.Content = string(body)
 	return &info, nil
+}
+
+// FetchCAByID retrieves CA certificate details from crt.sh by CA ID
+func (c *Client) FetchCAByID(ctx context.Context, caID int) (*InfoPage, error) {
+	u, err := url.Parse(fmt.Sprintf("%sca?id=%d", c.BaseURL, caID))
+	if err != nil {
+		return nil, fmt.Errorf("url parse error: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("request creation failed: %w", err)
+	}
+
+	req.Header.Set("User-Agent", c.UserAgent)
+
+	resp, body, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch CA info (status %d): %s", resp.StatusCode, string(body[:min(len(body), 200)]))
+	}
+
+	return &InfoPage{
+		Path:        fmt.Sprintf("ca?id=%d", caID),
+		Title:       fmt.Sprintf("CA Certificate #%d", caID),
+		Description: "CA certificate details from crt.sh",
+		Content:     string(body),
+	}, nil
 }
 
 func min(a, b int) int {

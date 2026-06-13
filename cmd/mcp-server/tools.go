@@ -40,6 +40,12 @@ func registerTools(s *server.MCPServer, client *crtsh.Client) {
 		mcp.WithBoolean("deduplicate",
 			mcp.Description("Deduplicate (pre)certificate pairs"),
 		),
+		mcp.WithBoolean("show_sql",
+			mcp.Description("Show the SQL query used by crt.sh for this search (for debugging)"),
+		),
+		mcp.WithBoolean("search_censys",
+			mcp.Description("Redirect search to Censys.io instead of crt.sh"),
+		),
 		mcp.WithNumber("page",
 			mcp.Description("Page number for pagination (1-based)"),
 		),
@@ -86,6 +92,17 @@ func registerTools(s *server.MCPServer, client *crtsh.Client) {
 		),
 	)
 	s.AddTool(infoPageTool, getInfoPageHandler(client))
+
+	// Tool: get_ca
+	caTool := mcp.NewTool("get_ca",
+		mcp.WithDescription("Retrieve CA (Certificate Authority) certificate details from crt.sh by CA ID. "+
+			"Returns the CA certificate page content including issuer chain and certificate details."),
+		mcp.WithNumber("ca_id",
+			mcp.Required(),
+			mcp.Description("The crt.sh CA ID (numeric, from issuer_ca_id field in certificate results)"),
+		),
+	)
+	s.AddTool(caTool, getCAHandler(client))
 }
 
 func searchCertificatesHandler(client *crtsh.Client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -99,6 +116,8 @@ func searchCertificatesHandler(client *crtsh.Client) func(ctx context.Context, r
 		match := req.GetString("match", "")
 		excludeExpired := req.GetBool("exclude_expired", false)
 		deduplicate := req.GetBool("deduplicate", false)
+		showSQL := req.GetBool("show_sql", false)
+		searchCensys := req.GetBool("search_censys", false)
 		page := int(req.GetFloat("page", 0))
 		pageSize := int(req.GetFloat("page_size", 0))
 		linter := req.GetString("linter", "")
@@ -109,6 +128,8 @@ func searchCertificatesHandler(client *crtsh.Client) func(ctx context.Context, r
 			Match:          match,
 			ExcludeExpired: excludeExpired,
 			Deduplicate:    deduplicate,
+			ShowSQL:        showSQL,
+			SearchCensys:   searchCensys,
 			Linter:         linter,
 			LintType:       lintType,
 			Page:           page,
@@ -218,6 +239,28 @@ func getInfoPageHandler(client *crtsh.Client) func(ctx context.Context, req mcp.
 		info, err := client.FetchInfoPage(ctx, page)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to fetch info page: %v", err)), nil
+		}
+
+		data, err := json.MarshalIndent(info, "", "  ")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("json marshal error: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+func getCAHandler(client *crtsh.Client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		caIDFloat, err := req.RequireFloat("ca_id")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("missing required parameter 'ca_id': %v", err)), nil
+		}
+		caID := int(caIDFloat)
+
+		info, err := client.FetchCAByID(ctx, caID)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("failed to fetch CA info: %v", err)), nil
 		}
 
 		data, err := json.MarshalIndent(info, "", "  ")
