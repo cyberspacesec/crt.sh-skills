@@ -55,7 +55,7 @@ builds:
 
 archives:
   - id: mcp-server-archives
-    builds:
+    ids:
       - mcp-server
     name_template: >-
       crtsh-skills-mcp-server-
@@ -64,13 +64,15 @@ archives:
       {{- else if eq .Arch "arm64" }}arm64
       {{- else if eq .Arch "386" }}386
       {{- else }}{{ .Arch }}{{ end }}
-    format: tar.gz
+    formats:
+      - tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
   - id: cli-archives
-    builds:
+    ids:
       - crtsh-cli
     name_template: >-
       crtsh-skills-cli-
@@ -79,10 +81,12 @@ archives:
       {{- else if eq .Arch "arm64" }}arm64
       {{- else if eq .Arch "386" }}386
       {{- else }}{{ .Arch }}{{ end }}
-    format: tar.gz
+    formats:
+      - tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 checksum:
   name_template: "checksums.txt"
