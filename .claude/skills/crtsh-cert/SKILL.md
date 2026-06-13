@@ -1,83 +1,100 @@
 ---
 name: crtsh-cert
-description: Use when retrieving a specific certificate's full details from crt.sh by its ID, or when investigating a Certificate Authority. Triggers on mentions of certificate ID lookup, specific cert details, CA investigation, or when user provides a crt.sh numeric ID or CA ID.
+description: Use when retrieving specific certificate or CA details from crt.sh. Triggers on certificate ID lookup, CA investigation, cert validity checking, or when user provides a crt.sh numeric ID or CA ID.
 allowed-tools: ["mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__get_ca", "mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_info_page", "mcp__go-crt-sh__search_censys"]
 ---
 
-# crt.sh Certificate & CA Detail Lookup
+# crt.sh — Certificate & CA Detail Lookup
 
-> Retrieve detailed information about a specific certificate or Certificate Authority from crt.sh.
+> Retrieve detailed information about specific certificates and Certificate Authorities from crt.sh.
 
-## Available Tools
+## Tool Quick Reference
 
-| Tool | Purpose |
-|------|---------|
-| `get_certificate` | Get specific certificate by crt.sh ID |
-| `get_ca` | Get CA certificate details by issuer_ca_id |
-| `search_certificates` | Search for certificates when you don't have the ID |
-| `get_info_page` | Access crt.sh info pages |
-| `search_censys` | Build Censys.io search URL |
+| Tool | What it does | Key params |
+|------|-------------|-----------|
+| `get_certificate` | Get cert by ID | id |
+| `get_ca` | Get CA cert details | ca_id |
+| `search_certificates` | Find certs when you don't have the ID | query, search_type |
+| `get_info_page` | Get CA-related info pages | page |
+| `search_censys` | Cross-reference on Censys.io | query, search_type |
 
-## CLI Usage
+## CLI Quick Reference
 
 ```bash
-# Get certificate by ID
-crtsh-cli get-cert 26786991824
-crtsh-cli get-cert 26786991824 --json
-
-# Get CA details
-crtsh-cli get-ca 16418
-
-# Search first, then get details
-crtsh-cli search example.com --exclude-expired
-crtsh-cli get-cert <id-from-results>
+crtsh-cli get-cert 26786991824                    # Get certificate details
+crtsh-cli get-cert 26786991824 --json             # JSON output
+crtsh-cli get-ca 16418                            # Get CA certificate details
+crtsh-cli search example.com -ed --page-size 5    # Find certs first
+crtsh-cli info-page ca-issuers                    # CA issuer info
 ```
 
 ## When to Use
 
-- User provides a numeric crt.sh certificate ID and wants full details
-- User wants to investigate a Certificate Authority by its CA ID
-- User found a certificate in search results and wants to deep-dive
-- User asks about a specific certificate's issuer, validity, or other details
+- User provides a numeric crt.sh certificate ID
+- User wants to investigate a Certificate Authority by CA ID
+- User needs full certificate details (issuer, validity, domains, serial)
+- User wants to trace the CA chain from a certificate
+- User asks about specific CA disclosures (Mozilla, Apple, Chrome)
 
 ## When NOT to Use
 
-- User wants to search for certificates by domain → use `crtsh-search` skill instead
-- User asks about general CT log information → explain conceptually, then offer search
+- User wants to search for certificates by domain → use `crtsh-search` skill
+- User wants bulk subdomain enumeration → use `crtsh-search` skill
 
 ## Instructions
 
-### For Certificate Lookup
+### Certificate Lookup
 
-1. Obtain the certificate ID (from user input or previous search results)
-2. If the user provides a domain name or hash instead of an ID, first use `search_certificates` to find the cert
-3. Call `get_certificate` with the `id` parameter
-4. Present the full certificate details including:
-   - Common Name, Issuer, Serial Number
-   - Validity period (not_before / not_after)
-   - All domain names
-   - Entry timestamp
+1. If the user provides a crt.sh ID directly, call `get_certificate(id=<id>)`
+2. If the user provides a domain/hash, first use `search_certificates` to find the cert, then `get_certificate` for details
+3. Present the full certificate details:
+   - Common Name, Issuer Name, Serial Number
+   - Validity period (not_before → not_after)
+   - All domain names (from `domains` array)
+   - Entry timestamp (when logged to CT)
 
-### For CA Lookup
+### CA Investigation
 
-1. Obtain the CA ID (from `issuer_ca_id` in search results)
-2. Call `get_ca` with the `ca_id` parameter
-3. Present the CA certificate details
+1. Get the `issuer_ca_id` from a certificate's search results
+2. Call `get_ca(ca_id=<issuer_ca_id>)` for CA certificate details
+3. For CA disclosure info, use `get_info_page`:
+   - `ca-issuers` — General CA issuer information
+   - `mozilla-disclosures` — Mozilla root program disclosures
+   - `apple-disclosures` — Apple root program disclosures
+   - `chrome-disclosures` — Chrome root program disclosures
+   - `revoked-intermediates` — Revoked intermediate CAs
+
+### Certificate Chain Investigation
+
+When the user wants to understand the full certificate chain:
+
+1. `search_certificates(query="example.com")` → find the cert
+2. `get_certificate(id=<cert_id>)` → get cert details + issuer_ca_id
+3. `get_ca(ca_id=<issuer_ca_id>)` → get CA cert details
 
 ## Examples
 
 ### Example 1: Direct ID lookup
 
-User: "Show me certificate 9999999"
+User: "Show me certificate 26786991824"
+→ `get_certificate(id=26786991824)`
 
-1. Call `get_certificate(id=9999999)`
-2. Present: "Certificate #9999999: CN=example.com, Issued by Cloudflare TLS Issuing RSA CA 3..."
+### Example 2: Domain → cert → CA chain
 
-### Example 2: Domain to certificate to CA chain
+User: "What CA issued the certificate for example.com?"
 
-User: "What CA issued the most recent certificate for example.com?"
+1. `search_certificates(query="example.com", exclude_expired=true, page_size=1)`
+2. Get `issuer_ca_id` from result
+3. `get_ca(ca_id=<issuer_ca_id>)`
 
-1. Call `search_certificates(query="example.com", exclude_expired=true, page_size=1)`
-2. Get the `issuer_ca_id` from the first result
-3. Call `get_ca(ca_id=<issuer_ca_id>)`
-4. Present the full CA details
+### Example 3: CA disclosure investigation
+
+User: "What are Mozilla's CA disclosures?"
+
+1. `get_info_page(page="mozilla-disclosures")`
+
+### Example 4: Check for revoked intermediates
+
+User: "Are there any revoked intermediate CAs?"
+
+1. `get_info_page(page="revoked-intermediates")`

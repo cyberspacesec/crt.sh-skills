@@ -103,6 +103,32 @@ func TestCertificate_UnmarshalJSON(t *testing.T) {
 				}`,
 			expectError: true,
 		},
+		{
+			name: "null entry_timestamp (crt.sh returns null for some certs)",
+			input: `{
+						"id": 8506962125,
+						"issuer_ca_id": -1,
+						"issuer_name": "Issuer Not Found",
+						"common_name": "example.com",
+						"name_value": "example.com\nuser@example.com",
+						"entry_timestamp": null,
+						"not_before": "2023-01-27T01:21:18",
+						"not_after": "2033-01-24T01:21:18",
+						"serial_number": "1ac1e693c87d36563a92ca145c87bbc26fd49f4c",
+						"result_count": 3
+					}`,
+				expected: Certificate{
+					ID:           8506962125,
+					IssuerCAID:   -1,
+					IssuerName:   "Issuer Not Found",
+					CommonName:   "example.com",
+					RawNameValue: "example.com\nuser@example.com",
+					NameValue:    []string{"example.com", "user@example.com"},
+					Domains:      []string{"example.com", "user@example.com"},
+					SerialNumber: "1ac1e693c87d36563a92ca145c87bbc26fd49f4c",
+					ResultCount:  3,
+				},
+			},
 	}
 
 	for _, tc := range testCases {

@@ -94,9 +94,12 @@ func (c *Certificate) UnmarshalJSON(data []byte) error {
 	}
 
 	var err error
-	c.EntryTimestamp, err = parseTime(aux.EntryTimestamp)
-	if err != nil {
-		return fmt.Errorf("parse entry_timestamp: %w", err)
+	// entry_timestamp can be null or empty in crt.sh responses
+	if aux.EntryTimestamp != "" {
+		c.EntryTimestamp, err = parseTime(aux.EntryTimestamp)
+		if err != nil {
+			return fmt.Errorf("parse entry_timestamp: %w", err)
+		}
 	}
 	c.NotBefore, err = parseTime(aux.NotBefore)
 	if err != nil {
