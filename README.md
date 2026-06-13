@@ -1,6 +1,6 @@
 # crt.sh-skills
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Release](https://img.shields.io/github/v/release/cyberspacesec/crt.sh-skills?include_prereleases)](https://github.com/cyberspacesec/crt.sh-skills/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Release](https://img.shields.io/github/v/release/cyberspacesec/crt.sh-skills?include_prereleases)](https://github.com/cyberspacesec/crt.sh-skills/releases/latest) [![CI](https://github.com/cyberspacesec/crt.sh-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/cyberspacesec/crt.sh-skills/actions/workflows/ci.yml)
 
 A Go SDK, CLI tool, and MCP server wrapping the [crt.sh](https://crt.sh/) Certificate Transparency search engine. **Every crt.sh feature is wrapped — nothing is left out.**
 
