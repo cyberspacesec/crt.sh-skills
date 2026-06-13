@@ -1,12 +1,49 @@
 ---
 name: crtsh-search
 description: Use when searching certificate transparency logs for domains, subdomains, SSL/TLS certificates, or certificate transparency data via crt.sh. Triggers on mentions of CT logs, subdomain enumeration, certificate search, SSL fingerprint lookup, or domain reconnaissance.
-allowed-tools: ["mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__get_info_page"]
+allowed-tools: ["mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__get_info_page", "mcp__go-crt-sh__get_ca", "mcp__go-crt-sh__search_censys"]
 ---
 
 # crt.sh Certificate Search
 
 > Search certificate transparency logs to discover domains, subdomains, and certificate details.
+
+## Available Tools
+
+| Tool | Purpose |
+|------|---------|
+| `search_certificates` | Search CT logs by domain, hash, serial, CA, etc. |
+| `get_certificate` | Get specific certificate by crt.sh ID |
+| `get_info_page` | Access crt.sh info pages (CA disclosures, CT log status, etc.) |
+| `get_ca` | Get CA certificate details by issuer_ca_id |
+| `search_censys` | Build Censys.io search URL for certificate data |
+
+## CLI Usage
+
+This project also provides a CLI tool (`crtsh-cli`) with the same capabilities:
+
+```bash
+# Search certificates
+crtsh-cli search example.com --exclude-expired --deduplicate
+crtsh-cli search ABCDEF1234 --type sha256
+crtsh-cli search "Let's Encrypt" --type CAName
+
+# Get certificate by ID
+crtsh-cli get-cert 26786991824 --json
+
+# Get info page
+crtsh-cli info-page monitored-logs
+
+# Get CA details
+crtsh-cli get-ca 16418
+
+# Build Censys URL
+crtsh-cli censys "example.com" --type CN
+
+# List available search types and info pages
+crtsh-cli list-types
+crtsh-cli list-pages
+```
 
 ## When to Use
 
@@ -73,22 +110,21 @@ The response contains a `certificates` array. Each certificate has:
 - `domains` — deduplicated, wildcard-stripped domain list
 - `entry_timestamp` — when the cert was logged
 - `not_before` / `not_after` — certificate validity period
-- `issuer_ca_id` — the CA that issued the cert
+- `issuer_ca_id` — the CA that issued the cert (use for get_ca)
 - `serial_number` — certificate serial number
 - `result_count` — number of matching results
-
-**Present results as:**
-1. A summary: "Found N certificates for domain X"
-2. A deduplicated domain/subdomain list (extract from all `domains` fields)
-3. Key certificate details if user asked specifically
 
 ### Step 4: Deep-dive with get_certificate (if needed)
 
 If the user wants details on a specific certificate, call `get_certificate` with the `id` from the search results.
 
-### Step 5: Info pages (if needed)
+### Step 5: CA investigation with get_ca (if needed)
 
-If the user asks about CT log monitoring, CA disclosures, or revocation information, call `get_info_page` with the appropriate page name:
+If the user wants details on a Certificate Authority, call `get_ca` with the `issuer_ca_id` from search results.
+
+### Step 6: Info pages (if needed)
+
+Call `get_info_page` for:
 - `monitored-logs` — CT logs monitored by crt.sh
 - `revoked-intermediates` — Revoked intermediate CAs
 - `mozilla-onecrl` — Mozilla's certificate revocation list
@@ -96,6 +132,12 @@ If the user asks about CT log monitoring, CA disclosures, or revocation informat
 - `ca-issuers` — CA issuer information
 - `ocsp-responders` — OCSP responder details
 - `cert-populations` — Certificate population statistics
+
+### Step 7: Censys search (if needed)
+
+If the user wants to search Censys.io for the same data, call `search_censys` with the same query and search_type. Returns a Censys.io URL.
+
+Note: Censys does NOT support these search types: `id`, `ctid`, `ski`, `spkisha1`, `spkisha256`, `subjectsha1`, `E`, `CAID`.
 
 ## Examples
 
@@ -122,14 +164,7 @@ User: "What certificates has Let's Encrypt issued for example.com?"
 2. Filter results where `issuer_name` contains "Let's Encrypt"
 3. Present filtered results
 
-### Example 4: Linting
-
-User: "Check example.com certificates for linting issues"
-
-1. Call `search_certificates(query="example.com", linter="zlint", lint_type="issues", deduplicate=true, exclude_expired=true)`
-2. Present any linting issues found
-
-### Example 5: CT log information
+### Example 4: CT log information
 
 User: "What CT logs does crt.sh monitor?"
 
@@ -141,5 +176,4 @@ User: "What CT logs does crt.sh monitor?"
 - crt.sh can be slow or return 5xx errors during peak load — the SDK retries automatically
 - For large domains, results can span many pages — ask user if they want all pages
 - Wildcard certificates (`*.example.com`) are stripped to the base domain in the `domains` field
-- The `name_value` field may contain multiple domains separated by newlines
 - Info pages return HTML content — parse accordingly

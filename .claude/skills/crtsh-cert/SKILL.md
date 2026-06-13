@@ -1,16 +1,42 @@
 ---
 name: crtsh-cert
-description: Use when retrieving a specific certificate's full details from crt.sh by its ID. Triggers on mentions of certificate ID lookup, specific cert details, or when user provides a crt.sh numeric ID.
-allowed-tools: ["mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_info_page"]
+description: Use when retrieving a specific certificate's full details from crt.sh by its ID, or when investigating a Certificate Authority. Triggers on mentions of certificate ID lookup, specific cert details, CA investigation, or when user provides a crt.sh numeric ID or CA ID.
+allowed-tools: ["mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__get_ca", "mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_info_page", "mcp__go-crt-sh__search_censys"]
 ---
 
-# crt.sh Certificate Detail Lookup
+# crt.sh Certificate & CA Detail Lookup
 
-> Retrieve detailed information about a specific certificate by its crt.sh ID.
+> Retrieve detailed information about a specific certificate or Certificate Authority from crt.sh.
+
+## Available Tools
+
+| Tool | Purpose |
+|------|---------|
+| `get_certificate` | Get specific certificate by crt.sh ID |
+| `get_ca` | Get CA certificate details by issuer_ca_id |
+| `search_certificates` | Search for certificates when you don't have the ID |
+| `get_info_page` | Access crt.sh info pages |
+| `search_censys` | Build Censys.io search URL |
+
+## CLI Usage
+
+```bash
+# Get certificate by ID
+crtsh-cli get-cert 26786991824
+crtsh-cli get-cert 26786991824 --json
+
+# Get CA details
+crtsh-cli get-ca 16418
+
+# Search first, then get details
+crtsh-cli search example.com --exclude-expired
+crtsh-cli get-cert <id-from-results>
+```
 
 ## When to Use
 
 - User provides a numeric crt.sh certificate ID and wants full details
+- User wants to investigate a Certificate Authority by its CA ID
 - User found a certificate in search results and wants to deep-dive
 - User asks about a specific certificate's issuer, validity, or other details
 
@@ -21,34 +47,22 @@ allowed-tools: ["mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__search_certi
 
 ## Instructions
 
-### Step 1: Obtain the certificate ID
+### For Certificate Lookup
 
-The crt.sh certificate ID is a numeric value. Sources:
-- Direct from user input (e.g., "look up cert 12345")
-- From previous `search_certificates` results (the `id` field)
+1. Obtain the certificate ID (from user input or previous search results)
+2. If the user provides a domain name or hash instead of an ID, first use `search_certificates` to find the cert
+3. Call `get_certificate` with the `id` parameter
+4. Present the full certificate details including:
+   - Common Name, Issuer, Serial Number
+   - Validity period (not_before / not_after)
+   - All domain names
+   - Entry timestamp
 
-If the user provides a domain name or hash instead of an ID, first use `search_certificates` to find the cert, then use `get_certificate` for details.
+### For CA Lookup
 
-### Step 2: Call get_certificate
-
-Call the `get_certificate` MCP tool with:
-- `id` — the numeric crt.sh certificate ID
-
-### Step 3: Present the certificate details
-
-The response contains the full certificate data including:
-- `id` — crt.sh ID
-- `issuer_ca_id` — Certificate Authority ID
-- `issuer_name` — Full issuer distinguished name
-- `common_name` — Certificate commonName
-- `name_value` — All names/domains on the certificate
-- `entry_timestamp` — CT log entry time
-- `not_before` — Certificate validity start
-- `not_after` — Certificate validity end
-- `serial_number` — Certificate serial number
-- `result_count` — Number of matching results
-
-Present the information in a structured, readable format.
+1. Obtain the CA ID (from `issuer_ca_id` in search results)
+2. Call `get_ca` with the `ca_id` parameter
+3. Present the CA certificate details
 
 ## Examples
 
@@ -57,13 +71,13 @@ Present the information in a structured, readable format.
 User: "Show me certificate 9999999"
 
 1. Call `get_certificate(id=9999999)`
-2. Present: "Certificate #9999999: CN=example.com, Issued by C=US, O=SSL Corp, CN=Cloudflare TLS Issuing RSA CA 3, valid from 2024-01-01 to 2025-01-01, for domains: example.com, www.example.com"
+2. Present: "Certificate #9999999: CN=example.com, Issued by Cloudflare TLS Issuing RSA CA 3..."
 
-### Example 2: Domain to certificate details
+### Example 2: Domain to certificate to CA chain
 
-User: "Show me the details of the most recent certificate for example.com"
+User: "What CA issued the most recent certificate for example.com?"
 
 1. Call `search_certificates(query="example.com", exclude_expired=true, page_size=1)`
-2. Get the `id` from the first result
-3. Call `get_certificate(id=<that_id>)`
-4. Present full details
+2. Get the `issuer_ca_id` from the first result
+3. Call `get_ca(ca_id=<issuer_ca_id>)`
+4. Present the full CA details

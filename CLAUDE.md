@@ -2,63 +2,64 @@
 
 ## Project Overview
 
-This is a Go SDK and MCP server wrapping the [crt.sh](https://crt.sh/) Certificate Transparency search engine. The goal is to be **大而全** — every crt.sh feature that can be wrapped, must be wrapped.
+This is a Go SDK and MCP server wrapping the [crt.sh](https://crt.sh/) Certificate Transparency search engine. The goal is **大而全** — every crt.sh feature that can be wrapped, must be wrapped.
 
-## Architecture
+## Three-Layer Architecture
 
-- `pkg/crtsh/` — Go SDK (Client, models, API calls, info pages)
-- `cmd/mcp-server/` — MCP server entry point with stdio/SSE/HTTP transports
-- `mcp-server` — Pre-compiled binary (Linux x86-64)
-- `examples/` — Usage examples for the Go SDK
-
-## MCP Server Tools
-
-The MCP server exposes **3 tools**:
-
-### search_certificates
-Search CT logs by domain, hash, serial, CA, etc. Supports all crt.sh search types:
-- `""` (default), `c` (certificate fingerprint), `id`, `ctid`, `serial`, `ski`
-- `spkisha1`, `spkisha256`, `subjectsha1`, `sha1`, `sha256`
-- `ca`, `CAID`, `CAName`, `Identity`, `CN`, `E`, `OU`, `O`
-- `dNSName`, `rfc822Name`, `iPAddress`
-
-Options: match mode, exclude expired, deduplicate, show SQL, linter, lint type, pagination.
-
-### get_certificate
-Retrieve a specific certificate by crt.sh ID.
-
-### get_info_page
-Retrieve crt.sh information pages:
-- `cert-populations`, `revoked-intermediates`, `ca-issuers`, `ocsp-responders`
-- `test-websites`, `monitored-logs`, `accepted-roots-missing`, `gen-add-chain`
-- `mozilla-disclosures`, `mozilla-certvalidations`, `mozilla-onecrl`
-- `apple-disclosures`, `chrome-disclosures`
-
-### Starting the server
-
-```bash
-# stdio mode (default, for Claude Code integration)
-./mcp-server --transport stdio
-
-# Or via go run
-go run ./cmd/mcp-server --transport stdio
-
-# HTTP mode (for remote access)
-./mcp-server --transport http --addr :8080
-
-# SSE mode (for browser-based clients)
-./mcp-server --transport sse --addr :8080 --base-url https://my-server.com
 ```
+┌─────────────────────────────────────────────┐
+│  Skills (.claude/skills/)                    │  AI-readable docs describing tools + CLI
+├─────────────────────────────────────────────┤
+│  MCP Server (cmd/mcp-server/)               │  AI-callable tools (5 tools)
+│  CLI Tool (cmd/crtsh-cli/)                  │  Human-callable commands (8 commands)
+├─────────────────────────────────────────────┤
+│  Go SDK (pkg/crtsh/)                        │  Programmatic API (5 methods)
+└─────────────────────────────────────────────┘
+```
+
+All three layers expose the **exact same capabilities** — no feature exists in one layer but not another.
+
+## SDK Methods (pkg/crtsh/)
+
+| Method | Description |
+|--------|-------------|
+| `SearchCertificates(ctx, QueryParams)` | Search CT logs (21 search types, 7 match modes, linting, pagination) |
+| `GetCertificateByID(ctx, id)` | Get certificate by crt.sh ID |
+| `FetchInfoPage(ctx, pagePath)` | Get info page (13 pages) |
+| `FetchCAByID(ctx, caID)` | Get CA certificate details |
+| `BuildCensysURL(searchType, value)` | Build Censys.io search URL |
+
+## MCP Tools (cmd/mcp-server/)
+
+| Tool | Maps to SDK Method |
+|------|-------------------|
+| `search_certificates` | SearchCertificates |
+| `get_certificate` | GetCertificateByID |
+| `get_info_page` | FetchInfoPage |
+| `get_ca` | FetchCAByID |
+| `search_censys` | BuildCensysURL |
+
+## CLI Commands (cmd/crtsh-cli/)
+
+| Command | Maps to SDK Method |
+|---------|-------------------|
+| `crtsh-cli search [query]` | SearchCertificates |
+| `crtsh-cli get-cert [id]` | GetCertificateByID |
+| `crtsh-cli info-page [page]` | FetchInfoPage |
+| `crtsh-cli get-ca [ca-id]` | FetchCAByID |
+| `crtsh-cli censys [query]` | BuildCensysURL |
+| `crtsh-cli list-types` | List search types |
+| `crtsh-cli list-pages` | List info pages |
 
 ## crt.sh URL Parameter Format
 
-**IMPORTANT:** The crt.sh JS uses specific URL parameter formats that differ from HTML form field names:
+**IMPORTANT:** The crt.sh JS uses specific URL parameter formats:
+- Search types use their name as the URL param key: `?CN=value`, `?sha256=value`, etc.
 - `exclude=expired` (NOT `excludeExpired=on`)
 - `deduplicate=Y` (NOT `deduplicate=on`)
 - `showSQL=Y` (NOT `showSQL=on`)
-- Linter params use linter name as key: `zlint=issues` (NOT `linter=zlint&linttype=issues`)
-- Search type `c`: URL is `?c=<fingerprint>` (NOT `?q=<fingerprint>`)
-- Search type `ca`: URL is `?ca=<value>` (NOT `?q=<value>`)
+- Linter params use linter name as key: `zlint=issues`
+- No `searchtype` URL param — the search type IS the param name
 
 ## Development Commands
 
@@ -69,8 +70,14 @@ go test ./pkg/crtsh/...
 # Build MCP server binary
 go build -o mcp-server ./cmd/mcp-server/
 
-# Run MCP server locally
+# Build CLI binary
+go build -o crtsh-cli ./cmd/crtsh-cli/
+
+# Run MCP server
 go run ./cmd/mcp-server --transport stdio
+
+# Run CLI
+go run ./cmd/crtsh-cli/ search example.com --exclude-expired --deduplicate
 ```
 
 ## Code Style
@@ -78,4 +85,4 @@ go run ./cmd/mcp-server --transport stdio
 - Follow standard Go conventions
 - Error messages use lowercase, no trailing punctuation
 - Exported functions and types must have doc comments
-- When adding new crt.sh features, ensure the SDK layer (pkg/crtsh/) supports it first, then expose via MCP tool
+- When adding new crt.sh features, ensure ALL THREE layers are updated: SDK → MCP tool + CLI command → Skills
