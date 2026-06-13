@@ -185,11 +185,11 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		data, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Println(string(data))
 	case "csv":
-		w := csv.NewWriter(os.Stdout)
-		w.Write([]string{"id", "issuer_ca_id", "common_name", "not_before", "not_after", "domains", "serial_number"})
+		cw := csv.NewWriter(os.Stdout)
+		_ = cw.Write([]string{"id", "issuer_ca_id", "common_name", "not_before", "not_after", "domains", "serial_number"})
 		for _, cert := range certs {
 			domains := strings.Join(cert.Domains, "; ")
-			w.Write([]string{
+			_ = cw.Write([]string{
 				strconv.Itoa(cert.ID),
 				strconv.Itoa(cert.IssuerCAID),
 				cert.CommonName,
@@ -199,7 +199,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 				cert.SerialNumber,
 			})
 		}
-		w.Flush()
+		cw.Flush()
 	default: // table
 		if len(certs) == 0 {
 			fmt.Println("No certificates found.")

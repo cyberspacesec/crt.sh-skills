@@ -13,7 +13,11 @@ linters:
 
 issues:
   exclude-rules:
-    # Allow unchecked Write/Encode in test HTTP handlers (common and harmless)
+    # Allow unchecked returns in test HTTP handlers (common and harmless)
     - path: _test\.go
       linters:
         - errcheck
+    # Allow unchecked Shutdown in goroutines (standard graceful shutdown pattern)
+    - linters:
+        - errcheck
+      source: "Shutdown\\("
