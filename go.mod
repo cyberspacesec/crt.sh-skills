@@ -1,4 +1,4 @@
-module github.com/cyberspacesec/go-crt.sh
+module github.com/cyberspacesec/crt.sh-skills
 
 go 1.23.4
 

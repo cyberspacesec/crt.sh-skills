@@ -4,7 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/cyberspacesec/go-crt.sh/pkg/crtsh"
+	"github.com/cyberspacesec/crt.sh-skills/pkg/crtsh"
 	"log"
 	"time"
 )

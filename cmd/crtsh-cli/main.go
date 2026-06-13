@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	crtsh "github.com/cyberspacesec/go-crt.sh/pkg/crtsh"
+	crtsh "github.com/cyberspacesec/crt.sh-skills/pkg/crtsh"
 	"github.com/spf13/cobra"
 )
 

@@ -10,6 +10,37 @@ allowed-tools: ["mcp__go-crt-sh__get_certificate", "mcp__go-crt-sh__get_ca", "mc
 
 ---
 
+## 📦 Installation
+
+### Option 1: Download Pre-built Binary (Recommended)
+
+No Go SDK required. Download from [GitHub Releases](https://github.com/cyberspacesec/crt.sh-skills/releases/latest):
+
+```bash
+# Detect platform and download
+OS=$(uname -s | tr A-Z a-z)
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-mcp-server-${OS}-${ARCH}.tar.gz" | tar xz
+chmod +x crtsh-skills-mcp-server-*
+
+# Download CLI tool
+curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-cli-${OS}-${ARCH}.tar.gz" | tar xz
+chmod +x crtsh-skills-cli-*
+```
+
+### Option 2: Clone & Build from Source
+
+Requires Go 1.23+:
+
+```bash
+git clone https://github.com/cyberspacesec/crt.sh-skills.git
+cd crt.sh-skills
+go build -o mcp-server ./cmd/mcp-server/
+go build -o crtsh-cli ./cmd/crtsh-cli/
+```
+
+---
+
 ## ⚡ 30-Second Quick Start
 
 **Get a certificate by ID:**

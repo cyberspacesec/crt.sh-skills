@@ -10,6 +10,63 @@ allowed-tools: ["mcp__go-crt-sh__search_certificates", "mcp__go-crt-sh__get_cert
 
 ---
 
+## 📦 Installation
+
+### Option 1: Download Pre-built Binary (Recommended)
+
+No Go SDK required. Download the binary for your platform from [GitHub Releases](https://github.com/cyberspacesec/crt.sh-skills/releases/latest):
+
+```bash
+# Detect platform and download MCP server
+OS=$(uname -s | tr A-Z a-z)
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-mcp-server-${OS}-${ARCH}.tar.gz" | tar xz
+chmod +x crtsh-skills-mcp-server-*
+
+# Download CLI tool
+curl -sL "https://github.com/cyberspacesec/crt.sh-skills/releases/latest/download/crtsh-skills-cli-${OS}-${ARCH}.tar.gz" | tar xz
+chmod +x crtsh-skills-cli-*
+```
+
+**Connect to Claude Code** — add to `~/.claude/settings.json`:
+```json
+{
+  "mcpServers": {
+    "crt-sh-skills": {
+      "command": "/path/to/crtsh-skills-mcp-server-linux-amd64",
+      "args": ["--transport", "stdio"]
+    }
+  }
+}
+```
+
+### Option 2: Clone & Build from Source
+
+Requires Go 1.23+:
+
+```bash
+git clone https://github.com/cyberspacesec/crt.sh-skills.git
+cd crt.sh-skills
+
+# Build MCP server
+go build -o mcp-server ./cmd/mcp-server/
+
+# Build CLI tool
+go build -o crtsh-cli ./cmd/crtsh-cli/
+
+# Run tests
+go test ./pkg/crtsh/...
+```
+
+### Option 3: Go Install
+
+```bash
+go install github.com/cyberspacesec/crt.sh-skills/cmd/mcp-server@latest
+go install github.com/cyberspacesec/crt.sh-skills/cmd/crtsh-cli@latest
+```
+
+---
+
 ## ⚡ 30-Second Quick Start
 
 **Most common task — subdomain enumeration:**

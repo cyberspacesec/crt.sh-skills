@@ -1,8 +1,11 @@
-# CLAUDE.md — go-crt.sh Project Instructions
+# CLAUDE.md — crt.sh-skills Project Instructions
 
 ## Project Overview
 
 This is a Go SDK and MCP server wrapping the [crt.sh](https://crt.sh/) Certificate Transparency search engine. The goal is **大而全** — every crt.sh feature that can be wrapped, must be wrapped.
+
+**Repository:** `github.com/cyberspacesec/crt.sh-skills`
+**Go Module:** `github.com/cyberspacesec/crt.sh-skills`
 
 ## Three-Layer Architecture
 
@@ -51,6 +54,22 @@ All three layers expose the **exact same capabilities** — no feature exists in
 | `crtsh-cli list-types` | List search types |
 | `crtsh-cli list-pages` | List info pages |
 
+## Release Process
+
+Tag-based release via GitHub Actions:
+
+```bash
+# Create a release tag
+git tag v1.0.0
+git push origin v1.0.0
+
+# GitHub Actions builds binaries for:
+# linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64, windows/arm64
+# Both mcp-server and crtsh-cli are built and uploaded as release assets.
+```
+
+Binary naming: `crtsh-skills-mcp-server-{os}-{arch}.tar.gz` and `crtsh-skills-cli-{os}-{arch}.tar.gz`
+
 ## crt.sh URL Parameter Format
 
 **IMPORTANT:** The crt.sh JS uses specific URL parameter formats:
@@ -72,6 +91,10 @@ go build -o mcp-server ./cmd/mcp-server/
 
 # Build CLI binary
 go build -o crtsh-cli ./cmd/crtsh-cli/
+
+# Build with version
+go build -ldflags "-X main.Version=v1.0.0" -o mcp-server ./cmd/mcp-server/
+go build -ldflags "-X main.Version=v1.0.0" -o crtsh-cli ./cmd/crtsh-cli/
 
 # Run MCP server
 go run ./cmd/mcp-server --transport stdio

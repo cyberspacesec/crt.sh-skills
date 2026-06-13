@@ -1,5 +1,5 @@
 {
-  "go-crt-sh": {
+  "crt-sh-skills": {
     "command": "go",
     "args": ["run", "./cmd/mcp-server", "--transport", "stdio"]
   }

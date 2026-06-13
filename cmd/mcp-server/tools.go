@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/cyberspacesec/go-crt.sh/pkg/crtsh"
+	"github.com/cyberspacesec/crt.sh-skills/pkg/crtsh"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )

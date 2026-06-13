@@ -10,7 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/cyberspacesec/go-crt.sh/pkg/crtsh"
+	"github.com/cyberspacesec/crt.sh-skills/pkg/crtsh"
 	"github.com/mark3labs/mcp-go/server"
 )
 
