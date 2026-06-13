@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.23', '1.24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Run tests
+        run: go test -v ./pkg/crtsh/...
+
+      - name: Run go vet
+        run: go vet ./...
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build all platforms
+        run: |
+          for GOOS in linux darwin windows; do
+            for GOARCH in amd64 arm64; do
+              echo "Building for ${GOOS}/${GOARCH}..."
+              GOOS=$GOOS GOARCH=$GOARCH go build -o /dev/null ./cmd/mcp-server/
+              GOOS=$GOOS GOARCH=$GOARCH go build -o /dev/null ./cmd/crtsh-cli/
+            done
+          done
+
+      - name: Verify version injection
+        run: |
+          go build -ldflags "-X main.Version=test-ci" -o /tmp/mcp-server ./cmd/mcp-server/
+          go build -ldflags "-X main.Version=test-ci" -o /tmp/crtsh-cli ./cmd/crtsh-cli/
+          /tmp/crtsh-cli --version | grep -q "test-ci" || (echo "Version injection failed for CLI" && exit 1)
+          /tmp/mcp-server --version | grep -q "test-ci" || (echo "Version injection failed for MCP server" && exit 1)
+          echo "Version injection verified successfully"
