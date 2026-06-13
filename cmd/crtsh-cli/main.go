@@ -27,6 +27,9 @@ var (
 	outputJSON     bool
 )
 
+// Version is set at build time via -ldflags
+var Version = "dev"
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "crtsh-cli",
@@ -43,6 +46,8 @@ func main() {
 		listPagesCmd(),
 		listSearchTypesCmd(),
 	)
+
+	rootCmd.Version = Version
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

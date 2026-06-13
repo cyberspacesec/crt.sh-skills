@@ -14,16 +14,25 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// Version is set at build time via -ldflags
+var Version = "1.0.0"
+
 func main() {
 	transport := flag.String("transport", "stdio", "Transport mode: stdio, sse, http")
 	addr := flag.String("addr", ":8080", "Listen address for SSE and HTTP modes (e.g. :8080)")
 	baseURL := flag.String("base-url", "", "Base URL for SSE mode (e.g. https://my-server.com)")
+	showVersion := flag.Bool("version", false, "Show version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("go-crt.sh MCP server v%s\n", Version)
+		os.Exit(0)
+	}
 
 	// Create MCP server
 	s := server.NewMCPServer(
 		"go-crt.sh",
-		"1.0.0",
+		Version,
 		server.WithToolCapabilities(false),
 		server.WithRecovery(),
 		server.WithInstructions(
